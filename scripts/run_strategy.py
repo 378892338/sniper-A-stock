@@ -27,10 +27,6 @@ INDEX_CN = {
     "csi300": "沪深300",
 }
 
-# 独立强势股配置
-INDEPENDENT_STOCK_THRESHOLD = 75.0  # L3评分最低要求
-INDEPENDENT_STOCK_CHAN_SCORE = 25   # 缠论买点满分要求
-INDEPENDENT_STOCK_SLOTS = 1         # 名额
 
 
 # ═══════════════════════ ETF 标签计算 ═══════════════════════
@@ -347,34 +343,14 @@ def _get_top_stocks(l3_scores: pd.DataFrame, stock_names: dict, stock_data: dict
                 return False
             return bool(set(tags) & strong_sectors)
 
-        def is_independent(row):
-            """独立强势股: 评分高 + 缠论买点满分 + 即使不在强池"""
-            score = row.get("score", 0)
-            chan = row.get("chan_buy_score", 0)
-            tags = row.get("行业", [])
-            if score >= INDEPENDENT_STOCK_THRESHOLD and chan >= INDEPENDENT_STOCK_CHAN_SCORE:
-                if not tags or not (set(tags) & strong_sectors):
-                    return True
-            return False
-
         month_data["in_strong_pool"] = month_data["行业"].apply(in_strong_pool)
-        month_data["is_independent"] = month_data.apply(is_independent, axis=1)
 
         # 在 TopN 截断前统计强势池股票总数
         total_scored = int(month_data["in_strong_pool"].sum())
 
-        # 主力: 强势行业池内股票
+        # §14: 移除独立强势股异常 — 仅从强势行业池选股
         pool_stocks = month_data[month_data["in_strong_pool"]].nlargest(top_n, "score")
-        # 独立强势股补充 (最多 INDEPENDENT_STOCK_SLOTS 只)
-        independent = month_data[month_data["is_independent"]].nlargest(INDEPENDENT_STOCK_SLOTS, "score")
-
-        # 合并去重
-        selected = pd.concat([pool_stocks, independent]).drop_duplicates(subset=["symbol"])
-        if len(selected) < top_n:
-            # 不足时从剩余股票补足
-            rest = month_data[~month_data["symbol"].isin(selected["symbol"])].nlargest(top_n - len(selected), "score")
-            selected = pd.concat([selected, rest])
-        month_data = selected.head(top_n)
+        month_data = pool_stocks.head(top_n)
     else:
         total_scored = len(month_data)
         month_data = month_data.nlargest(top_n, "score")
@@ -763,9 +739,8 @@ def generate_markdown(market_indices, sector_rankings, top_stocks, today_str: st
     extra_count = 0
     if not top_stocks.empty:
         for _, r in top_stocks.iterrows():
-            is_ind = r.get("is_independent", False) if "is_independent" in r.index else False
             is_pool = r.get("in_strong_pool", True) if "in_strong_pool" in r.index else True
-            if is_ind or not is_pool:
+            if not is_pool:
                 extra_count += 1
             else:
                 pool_count += 1
@@ -815,16 +790,12 @@ def generate_markdown(market_indices, sector_rankings, top_stocks, today_str: st
         pool_rows = []
         extra_rows = []
         for _, r in top_stocks.iterrows():
-            is_ind = r.get("is_independent", False) if "is_independent" in r.index else False
             is_pool = r.get("in_strong_pool", True) if "in_strong_pool" in r.index else True
             industry = r.get("行业_display", r.get("行业", "-"))
             if industry == "综合":
                 industry = "—"
 
-            if is_ind:
-                typ = f'<span style="color:{C["purple"]};font-family:宋体;font-size:10.5pt;font-weight:bold">独立</span>'
-                extra_rows.append((r, industry, typ))
-            elif not is_pool:
+            if not is_pool:
                 typ = f'<span style="color:{C["amber"]};font-family:宋体;font-size:10.5pt;font-weight:bold">补位</span>'
                 extra_rows.append((r, industry, typ))
             else:
@@ -1011,8 +982,8 @@ def main():
         from gate.layer1_market import assess_market
         if market_weekly:
             l1_result = assess_market(market_weekly)
-            l1_market_state_map = {"牛市": "bull", "震荡": "volatile", "偏弱": "weak", "熊市": "bear"}
-            l1_market_state = l1_market_state_map.get(l1_result.market_state, "volatile")
+            from gate.market_state import MarketState
+            l1_market_state = MarketState.normalize(l1_result.market_state).value
             logger.info(f"L1: {l1_result.market_state} | 均分{l1_result.avg_score:.1f} | 仓位{l1_result.actual_position_pct*100:.0f}%")
     except Exception as e:
         logger.warning(f"L1 评估失败: {e}")
@@ -1079,8 +1050,7 @@ def main():
     if not top_stocks.empty:
         logger.info(f"L3 Top15 评分: {top_stocks['score'].iloc[0]:.2f} ~ {top_stocks['score'].iloc[-1]:.2f}")
         in_pool = top_stocks.get("in_strong_pool", pd.Series([True] * len(top_stocks)))
-        independent = top_stocks.get("is_independent", pd.Series([False] * len(top_stocks)))
-        logger.info(f"  强势池内: {in_pool.sum()} | 独立强势: {independent.sum()}")
+        logger.info(f"  强势池内: {in_pool.sum()}")
     else:
         logger.warning("无 L3 评分数据")
 

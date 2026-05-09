@@ -3,13 +3,28 @@
 import numpy as np
 import pandas as pd
 
+from gate.market_state import MarketState, get_top_k_ratio, get_top_k_min_k
 from core.logger import get_logger
 
 logger = get_logger("gate.threshold")
 
 
-def default_top_k(total: int, ratio: float = 0.30, min_k: int = 3) -> int:
-    """默认TopK: max(min_k, total * ratio)"""
+def default_top_k(candidate_count: int, l1_state: str | None = None) -> int:
+    """TopK 联动 L1 市场状态 (§15)
+
+    bull → ratio=0.45, min_k=4
+    volatile → ratio=0.35, min_k=3
+    weak → ratio=0.25, min_k=3
+    bear → 0 (跳过L2)
+    """
+    state = MarketState.normalize(l1_state) if l1_state else MarketState.VOLATILE
+    ratio = get_top_k_ratio(state)
+    min_k = get_top_k_min_k(state)
+    return max(min_k, int(candidate_count * ratio))
+
+
+def default_top_k_static(total: int, ratio: float = 0.30, min_k: int = 3) -> int:
+    """旧版静态 TopK（兼容过渡期调用）"""
     return max(min_k, int(total * ratio))
 
 

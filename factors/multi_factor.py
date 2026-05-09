@@ -101,11 +101,66 @@ def compute_raw_factors(
 
     factors = {"symbol": symbol}
 
+    # ── 预计算 MACD（避免 assess_stock 重复计算）──
+    try:
+        daily_dif, daily_dea, daily_hist = calc_macd(close)
+    except Exception:
+        daily_dif, daily_dea, daily_hist = None, None, None
+
+    try:
+        weekly_dif, weekly_dea, weekly_hist = (
+            calc_macd(weekly_df["close"]) if weekly_df is not None and not weekly_df.empty
+            else (None, None, None)
+        )
+    except Exception:
+        weekly_dif, weekly_dea, weekly_hist = None, None, None
+
+    try:
+        monthly_dif, monthly_dea, monthly_hist = (
+            calc_macd(monthly_df["close"]) if monthly_df is not None and not monthly_df.empty
+            else (None, None, None)
+        )
+    except Exception:
+        monthly_dif, monthly_dea, monthly_hist = None, None, None
+
+    # 缓存 MACD 结果，供 assess_stock 复用
+    factors["_daily_dif"] = daily_dif
+    factors["_daily_dea"] = daily_dea
+    factors["_daily_hist"] = daily_hist
+    factors["_weekly_dif"] = weekly_dif
+    factors["_weekly_dea"] = weekly_dea
+    factors["_weekly_hist"] = weekly_hist
+    factors["_monthly_dif"] = monthly_dif
+    factors["_monthly_dea"] = monthly_dea
+    factors["_monthly_hist"] = monthly_hist
+
     # ── Trend 维度 ──
+
+    # 预计算分型（避免 assess_stock 中重复计算）
+    try:
+        from factors.chanlun.fractal import identify_fractals
+        daily_frac = identify_fractals(daily_df.copy())
+        factors["_daily_top_fractal"] = daily_frac["top_fractal"] if "top_fractal" in daily_frac.columns else pd.Series(False, index=daily_df.index)
+        factors["_daily_bottom_fractal"] = daily_frac["bottom_fractal"] if "bottom_fractal" in daily_frac.columns else pd.Series(False, index=daily_df.index)
+    except Exception:
+        factors["_daily_top_fractal"] = pd.Series(False, index=daily_df.index)
+        factors["_daily_bottom_fractal"] = pd.Series(False, index=daily_df.index)
+
+    try:
+        from factors.chanlun.fractal import identify_fractals
+        if weekly_df is not None and not weekly_df.empty:
+            weekly_frac = identify_fractals(weekly_df.copy())
+            factors["_weekly_top_fractal"] = weekly_frac["top_fractal"] if "top_fractal" in weekly_frac.columns else pd.Series(False, index=weekly_df.index)
+            factors["_weekly_bottom_fractal"] = weekly_frac["bottom_fractal"] if "bottom_fractal" in weekly_frac.columns else pd.Series(False, index=weekly_df.index)
+        else:
+            factors["_weekly_top_fractal"] = None
+            factors["_weekly_bottom_fractal"] = None
+    except Exception:
+        factors["_weekly_top_fractal"] = None
+        factors["_weekly_bottom_fractal"] = None
 
     # 5维MACD (标量0-30)
     try:
-        weekly_dif, weekly_dea, weekly_hist = calc_macd(weekly_df["close"]) if weekly_df is not None and not weekly_df.empty else (None, None, None)
         from gate.layer2_sector import _score_trend_5dim
         factors["trend_macd_5dim"] = _score_trend_5dim(weekly_dif, weekly_dea, weekly_hist, weekly_df["close"]) if weekly_dif is not None else 15.0
     except Exception:
@@ -139,7 +194,7 @@ def compute_raw_factors(
     # ── Alpha: 技术确认 ──
 
     # 底背驰 (日线)
-    factors["bottom_divergence"] = _score_bottom_divergence(daily_df)
+    factors["bottom_divergence"] = _score_bottom_divergence(daily_df, daily_hist)
 
     # 量能反转
     factors["volume_reversal"] = _score_volume_reversal(volume_or_amount, close) if volume_or_amount is not None else 0.5
@@ -182,14 +237,16 @@ def compute_raw_factors(
 # 技术确认子因子
 # ═══════════════════════════════════════════════════════════════════════
 
-def _score_bottom_divergence(daily_df: pd.DataFrame) -> float:
+def _score_bottom_divergence(daily_df: pd.DataFrame, daily_hist: "pd.Series | None" = None) -> float:
     """底背驰得分 (0-1)。
 
     使用日线底背驰检测，近5日出现底背驰信号 → 1.0
+    支持传入预计算的 daily_hist 避免重复计算 MACD。
     """
     try:
         from factors.chanlun.divergence import check_daily_bottom_divergence
-        _, _, daily_hist = calc_macd(daily_df["close"])
+        if daily_hist is None:
+            _, _, daily_hist = calc_macd(daily_df["close"])
         has_div = check_daily_bottom_divergence(daily_df, daily_hist)
         return 1.0 if has_div else 0.0
     except Exception:
@@ -311,6 +368,13 @@ def process_cross_section(factors_list: list[dict]) -> pd.DataFrame:
         if len(series) < 5:
             df[col] = 0.0
             continue
+
+        # trend_macd_5dim 已是 0-30 的标准化评分，跳过 z-score (H6)
+        if col == "trend_macd_5dim":
+            aligned = df[col].fillna(15.0)
+            df[col] = aligned
+            continue
+
         # 扩展回原索引做去极值和标准化
         aligned = df[col].copy()
         med = series.median()
@@ -340,33 +404,74 @@ def process_cross_section(factors_list: list[dict]) -> pd.DataFrame:
 # 评分合成
 # ═══════════════════════════════════════════════════════════════════════
 
-def get_dynamic_weights(market_state: str | None = None) -> dict[str, float]:
+# 权重校准缓存
+_last_calibration: "CalibrationResult | None" = None
+_last_calibration_month: str = ""
+_last_calibration_state: str = ""
+
+
+def get_dynamic_weights(market_state: str | None = None,
+                        l3_suspended: bool = False,
+                        force_recalibrate: bool = False,
+                        store=None) -> dict[str, float]:
     """根据市场状态返回动态因子权重。
 
     牛市: momentum↑ reversal↓ (动量主导)
     震荡: 默认权重
     偏弱: reversal↑ momentum↓ (反转主导)
     熊市: reversal主导 但整体通过 alpha_multiplier 降权
+    l3_suspended: 阴跌时冻结权重，维持最近一次非冻结权重
+    force_recalibrate: 强制重新校准 (§8.1)
+    store: DataStore 实例，用于校准
     """
+    global _last_calibration, _last_calibration_month, _last_calibration_state
+
     w = DEFAULT_WEIGHTS.copy()
+
+    # §8.1: 数据驱动校准 (月度 / 状态变化时触发)
+    if force_recalibrate and store is not None:
+        from datetime import datetime
+        current_month = datetime.now().strftime("%Y-%m")
+        state_key = market_state or "volatile"
+
+        if (_last_calibration is None
+                or current_month != _last_calibration_month
+                or state_key != _last_calibration_state):
+            try:
+                from factors.weights_calibrator import calibrate_weights
+                _last_calibration = calibrate_weights(
+                    store, market_state=state_key,
+                )
+                _last_calibration_month = current_month
+                _last_calibration_state = state_key
+                w = _last_calibration.weights.copy()
+                return w
+            except Exception:
+                pass
 
     if market_state is None:
         return w
 
+    if l3_suspended:
+        return w
+
     if market_state in ("bull", "牛市"):
-        # 动量增强: momentum_12_1 +5, reversal_20 -4
         w["momentum_12_1"] = min(20, w["momentum_12_1"] + 5)
         w["reversal_20"] = max(6, w["reversal_20"] - 6)
         w["oversold_60"] = max(2, w["oversold_60"] - 4)
     elif market_state in ("weak", "偏弱"):
-        # 反转增强: reversal_20 +5, momentum_12_1 -5
         w["reversal_20"] = min(18, w["reversal_20"] + 6)
         w["oversold_60"] = min(10, w["oversold_60"] + 4)
         w["momentum_12_1"] = max(8, w["momentum_12_1"] - 7)
     elif market_state in ("bear", "熊市"):
-        # 反转主导 + 整体降权（由 alpha_multiplier 处理）
         w["reversal_20"] = min(18, w["reversal_20"] + 6)
         w["momentum_12_1"] = max(5, w["momentum_12_1"] - 10)
+
+    # 归一化确保总和 = 100
+    total = sum(w.values())
+    if total > 0 and total != 100:
+        scale = 100.0 / total
+        w = {k: round(v * scale, 2) for k, v in w.items()}
 
     return w
 

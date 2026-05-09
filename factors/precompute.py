@@ -37,10 +37,12 @@ def _rolling_bottom_divergence(
 
     try:
         signals = detect_bottom_divergence(daily_df, daily_hist)
-        # 仅在信号确认当日标记，不回溯（避免前向传播偏差）
         for div_date in signals.index[signals]:
             div_idx = signals.index.get_loc(div_date)
             result.iloc[div_idx] = 1.0
+            # 前向填充5日：背驰信号有效期5天
+            for offset in range(1, min(5, len(result) - div_idx)):
+                result.iloc[div_idx + offset] = 1.0
     except Exception as e:
         logger.warning(f"底背驰预计算失败: {e}")
 

@@ -49,7 +49,7 @@ def detect_ma_convergence(df: pd.DataFrame, ma_list: list[int] = None,
     """
     检测均线粘合形态。
 
-    条件：多条均线在 converge_pct 范围内粘合 ≥ min_converge_days 天
+    条件：多条均线在 converge_pct 范围内**连续**粘合 ≥ min_converge_days 天 (H5)
 
     返回: bool序列，True=粘合当天
     """
@@ -65,11 +65,16 @@ def detect_ma_convergence(df: pd.DataFrame, ma_list: list[int] = None,
     for p in ma_list:
         mas[p] = close.rolling(p).mean()
 
-    for i in range(max(ma_list) + min_converge_days, len(df)):
+    consecutive = 0
+    for i in range(max(ma_list), len(df)):
         ma_values = [mas[p].iloc[i] for p in ma_list]
         ma_range = (max(ma_values) - min(ma_values)) / min(ma_values)
         if ma_range <= converge_pct:
-            result.iloc[i] = True
+            consecutive += 1
+            if consecutive >= min_converge_days:
+                result.iloc[i] = True
+        else:
+            consecutive = 0
 
     return result
 

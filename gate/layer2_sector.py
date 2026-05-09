@@ -16,6 +16,9 @@ from factors.chanlun.divergence import (
 from factors.volume import score_volume_three_part
 from gate.fund_fallback import assess_fund_for_layer
 from gate.threshold import default_top_k
+from gate.market_state import (
+    MarketState, get_gate_threshold, get_bearish_threshold,
+)
 from core.logger import get_logger
 
 logger = get_logger("gate.layer2")
@@ -28,11 +31,6 @@ BEARISH_SIGNAL_WEIGHTS = {
     "daily_dif_below_zero": 0,  # 状态描述，非战术信号；弱市中永远为True会虚增拦截
 }
 BEARISH_INTERCEPT_THRESHOLD = 4
-
-# 动态看空拦截阈值：偏弱市场容忍度更高，牛市更警惕反转
-_BEARISH_THRESHOLD_MAP = {"bull": 3, "volatile": 4, "weak": 5, "bear": 999}
-# 动态 Gate bullish 门槛：偏弱市场放宽，牛市收紧
-_GATE_THRESHOLD_MAP = {"bull": 3, "volatile": 2, "weak": 1, "bear": 999}
 
 
 @dataclass
@@ -173,14 +171,15 @@ def assess_single_sector(
     gate["顶部得分"] = bearish_score
 
     # ═══════════════════════════════════════════
-    # 判定: 看空加权≥阈值 → 拦截, bullish≥阈值 → 通过, 其余不通过
+    # 判定: 看空加权≥阈值 → 拦截, bullish≥阈值 + 技术条件≥1 → 通过, 其余不通过
     # risk_warning 与 Gate 判定解耦: 存在看空信号即为风险提示
     # ═══════════════════════════════════════════
+    tech_conditions_count = sum([b1, b2, b3, b4])  # 排除资金面 b5 (R3)
     risk_warning = bearish_score >= 1
 
     if bearish_weighted >= bearish_threshold:
         passed = False
-    elif bullish_score >= gate_threshold:
+    elif bullish_score >= gate_threshold and tech_conditions_count >= 1:
         passed = True
     else:
         passed = False
@@ -423,8 +422,6 @@ def assess_sectors(
     daily_data: dict[str, pd.DataFrame] | None = None,
     benchmark_close: pd.Series | None = None,
     fund_data: dict[str, dict] | None = None,
-    top_k_ratio: float = 0.30,
-    min_top_k: int = 3,
     score_weights: dict[str, float] | None = None,
     l1_market_state: str = "volatile",
 ) -> Layer2Result:
@@ -446,9 +443,10 @@ def assess_sectors(
     # 预计算横截面收益率
     cross_returns = _compute_cross_returns(etf_data)
 
-    # 动态阈值
-    gate_threshold = _GATE_THRESHOLD_MAP.get(l1_market_state, 2)
-    bearish_threshold = _BEARISH_THRESHOLD_MAP.get(l1_market_state, 4)
+    # 动态阈值 — 使用 MarketState 统一映射
+    state = MarketState.normalize(l1_market_state)
+    gate_threshold = get_gate_threshold(state)
+    bearish_threshold = get_bearish_threshold(state)
 
     all_verdicts = []
     candidates = []
@@ -523,7 +521,7 @@ def assess_sectors(
         details.append(f"形态修正后: {len(candidates)} 候选 (状态={l1_market_state})")
 
     candidates = sorted(candidates, key=lambda v: v.score, reverse=True)
-    k = default_top_k(len(candidates), top_k_ratio, min_top_k)
+    k = default_top_k(len(candidates), l1_market_state)
     strong = candidates[:k]
 
     details.append(f"最终: {len(candidates)} 候选 | {len(strong)} 强势 (TopK={k}, 门槛={gate_threshold}of5)")

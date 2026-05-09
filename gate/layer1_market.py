@@ -56,6 +56,8 @@ class Layer1Result:
     risk_warning: bool = False
     bottom_bullish_markets: int = 0
     avg_score: float = 0.0  # 三市平均分
+    yin_die_triggered: bool = False  # §9: 任一市场检测到阴跌
+    yin_die_markets: list[str] = field(default_factory=list)
 
 
 def assess_single_market(
@@ -248,12 +250,17 @@ def assess_market(
     bottom_bullish = sum(1 for v in verdicts.values() if v.bullish_score >= 2)
     has_risk_warning = any(v.risk_warning for v in verdicts.values())
 
+    # §9: 阴跌检测 — 任一市场检测到阴跌即触发
+    yin_die_markets = [names_map.get(k, k) for k, v in verdicts.items() if v.tech_details.get("阴跌", False)]
+    yin_die_triggered = len(yin_die_markets) > 0
+
     # ── 创业板一票否决（P1）──
     cy = verdicts.get("chinext")
     chinext_weak = cy is not None and not cy.is_strong
     chinext_bearish = cy is not None and (cy.bearish_weighted >= L1_BEARISH_INTERCEPT or cy.tech_details.get("阴跌", False))
 
     # 判定市场状态（考虑底部共振）
+    # R2: 3市全强但底部共振<2 → 震荡（底部共振不足降级）
     if strong_count == 3 and bottom_bullish >= 2:
         state = "牛市"
     elif strong_count == 3:
@@ -315,6 +322,8 @@ def assess_market(
         risk_warning=has_risk_warning,
         bottom_bullish_markets=bottom_bullish,
         avg_score=avg_score,
+        yin_die_triggered=yin_die_triggered,
+        yin_die_markets=yin_die_markets,
     )
 
 

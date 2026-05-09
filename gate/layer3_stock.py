@@ -52,6 +52,8 @@ class StockVerdict:
     pattern_mult: float = 1.0  # 形态乘数 (0.90-1.20), 由 _calc_pattern_multiplier 计算
     chan_buy_point: str = ""   # 缠论买点类型 (一买/二买/三买)
     chan_buy_score: float = 0.0  # 缠论买点评分
+    pattern_labels: list[str] = field(default_factory=list)  # §10: 检测到的形态标签
+    pattern_category: str = ""  # §10: 突破型/反转型/均线型/无形态
 
 
 def assess_stock(
@@ -61,6 +63,8 @@ def assess_stock(
     monthly_df: pd.DataFrame | None = None,
     fund_data: dict | None = None,
     factor_scores: dict | None = None,
+    precomputed_macd: dict | None = None,
+    fast_mode: bool = False,
 ) -> StockVerdict:
     """评估单个股票。
 
@@ -83,15 +87,45 @@ def assess_stock(
     gate = {}
     warnings = []
 
-    daily_dif, daily_dea, daily_hist = calc_macd(daily_df["close"])
-    weekly_dif, weekly_dea, weekly_hist = (
-        calc_macd(weekly_df["close"]) if weekly_df is not None and not weekly_df.empty
-        else (None, None, None)
-    )
-    monthly_dif, monthly_dea, monthly_hist = (
-        calc_macd(monthly_df["close"]) if monthly_df is not None and not monthly_df.empty
-        else (None, None, None)
-    )
+    # 优先使用预计算的分型数据，避免重复 identify_fractals
+    from factors.chanlun.fractal import identify_fractals
+    if precomputed_macd is not None and precomputed_macd.get("daily_top_fractal") is not None:
+        if "top_fractal" not in daily_df.columns:
+            daily_df = daily_df.copy()
+            daily_df["top_fractal"] = precomputed_macd["daily_top_fractal"]
+            daily_df["bottom_fractal"] = precomputed_macd["daily_bottom_fractal"]
+    elif "top_fractal" not in daily_df.columns:
+        daily_df = identify_fractals(daily_df)
+    if weekly_df is not None and not weekly_df.empty:
+        if precomputed_macd is not None and precomputed_macd.get("weekly_top_fractal") is not None:
+            if "top_fractal" not in weekly_df.columns:
+                weekly_df = weekly_df.copy()
+                weekly_df["top_fractal"] = precomputed_macd["weekly_top_fractal"]
+                weekly_df["bottom_fractal"] = precomputed_macd["weekly_bottom_fractal"]
+        elif "top_fractal" not in weekly_df.columns:
+            weekly_df = identify_fractals(weekly_df)
+
+    # 优先使用预计算的 MACD，否则重新计算
+    if precomputed_macd is not None:
+        daily_dif = precomputed_macd.get("daily_dif")
+        daily_dea = precomputed_macd.get("daily_dea")
+        daily_hist = precomputed_macd.get("daily_hist")
+        weekly_dif = precomputed_macd.get("weekly_dif")
+        weekly_dea = precomputed_macd.get("weekly_dea")
+        weekly_hist = precomputed_macd.get("weekly_hist")
+        monthly_dif = precomputed_macd.get("monthly_dif")
+        monthly_dea = precomputed_macd.get("monthly_dea")
+        monthly_hist = precomputed_macd.get("monthly_hist")
+    else:
+        daily_dif, daily_dea, daily_hist = calc_macd(daily_df["close"])
+        weekly_dif, weekly_dea, weekly_hist = (
+            calc_macd(weekly_df["close"]) if weekly_df is not None and not weekly_df.empty
+            else (None, None, None)
+        )
+        monthly_dif, monthly_dea, monthly_hist = (
+            calc_macd(monthly_df["close"]) if monthly_df is not None and not monthly_df.empty
+            else (None, None, None)
+        )
 
     # ── Gate: 底部共振（3取2）──
     # B1: 周线MACD金叉状态
@@ -128,12 +162,11 @@ def assess_stock(
     bullish_score = sum([b1, b2, b3])
     gate["底部得分(3取2)"] = bullish_score
 
-    # ── 顶部拦截（不变）──
+    # ── 顶部拦截：日线/周线顶背驰分离加权 (H3) ──
     daily_top_div = check_daily_top_divergence(daily_df, daily_hist)
     weekly_top_div = False
     if weekly_df is not None and not weekly_df.empty and weekly_hist is not None:
         weekly_top_div = check_weekly_top_divergence(weekly_df, weekly_hist)
-    t1 = daily_top_div or weekly_top_div
     gate["日线顶背驰"] = daily_top_div
     gate["周线顶背驰"] = weekly_top_div
 
@@ -149,19 +182,21 @@ def assess_stock(
     gate["日线死叉"] = daily_death
     gate["日线DIF<0"] = daily_dif_below_zero
 
-    bearish_score = sum([t1, t2, t3])
+    # 顶背驰分离计数：t1_daily + t1_weekly 替代原合并的 t1
+    bearish_score = sum([daily_top_div, weekly_top_div, t2, t3])
     gate["顶部得分"] = bearish_score
 
-    # 看空加权 (与L2一致)
+    # 看空加权：日线顶背驰×2 + 周线顶背驰×3 + 周线死叉×2 + 日线死叉/DIF<0×1
     bearish_weighted = (
-        (1 if t1 else 0) * 3 +
+        (1 if daily_top_div else 0) * 2 +
+        (1 if weekly_top_div else 0) * 3 +
         (1 if t2 else 0) * 2 +
         (1 if t3 else 0) * 1
     )
     gate["看空加权"] = bearish_weighted
 
     # ── 判定 ──
-    if bearish_weighted >= 4:
+    if bearish_weighted >= 5:
         all_pass = False
         risk_warning = False
     elif bullish_score >= 2:
@@ -194,15 +229,25 @@ def assess_stock(
                 fund_result,
             )
 
+        # ── 形态分类标签 (§10) ──
+        if fast_mode:
+            pattern_labels, pattern_category = [], "回测"
+        else:
+            pattern_labels, pattern_category = _classify_patterns(
+                daily_df, weekly_dif, weekly_dea, weekly_hist,
+            )
+
         # ── 形态加成（乘性 0.90x-1.20x）──
-        # 优先使用预计算值（fast_backtest 预计算全历史形态）
+        # 仅作用于 Alpha 维度 (D5: pattern_mult 不应用于 trend/risk)
         if factor_scores is not None and "_pattern_mult" in factor_scores:
             pattern_mult = factor_scores["_pattern_mult"]
+        elif fast_mode:
+            pattern_mult = 1.0  # 回测模式跳过昂贵的形态检测
         else:
             pattern_mult = _calc_pattern_multiplier(daily_df, weekly_dif, weekly_dea, weekly_hist)
-        score = round(score * pattern_mult, 1)
-        trend_score = round(trend_score * pattern_mult, 1)
-        alpha_score = round(alpha_score * pattern_mult, 1)
+        alpha_adjusted = alpha_score * pattern_mult
+        score = round(trend_score + alpha_adjusted + risk_score, 1)
+        alpha_score = round(alpha_adjusted, 1)
         gate["形态乘数"] = round(pattern_mult, 3)
 
         # 风险提示
@@ -240,7 +285,101 @@ def assess_stock(
         bearish_score=bearish_score,
         risk_warning=risk_warning,
         pattern_mult=pattern_mult,
+        pattern_labels=pattern_labels,
+        pattern_category=pattern_category,
     )
+
+
+def _classify_patterns(
+    daily_df: pd.DataFrame,
+    weekly_dif: pd.Series | None = None,
+    weekly_dea: pd.Series | None = None,
+    weekly_hist: pd.Series | None = None,
+) -> tuple[list[str], str]:
+    """检测所有形态并归类到 3 个类别 (§10)。
+
+    返回: (pattern_labels, pattern_category)
+    - 突破型: 涨停突破, 平台突破, 旗形突破
+    - 反转型: W底, 底背驰, 底分型, 缠论买点
+    - 均线型: 均线粘合
+    """
+    labels: list[str] = []
+
+    # 突破型
+    try:
+        from factors.pattern import (
+            detect_limit_up_breakout, detect_platform_breakout,
+            detect_flag_triangle_breakout,
+        )
+        if detect_limit_up_breakout(daily_df).tail(60).any():
+            labels.append("涨停突破")
+        if detect_platform_breakout(daily_df).tail(20).any():
+            labels.append("平台突破")
+        if detect_flag_triangle_breakout(daily_df).tail(20).any():
+            labels.append("旗形突破")
+    except Exception:
+        pass
+
+    # 反转型
+    try:
+        from factors.pattern import detect_double_bottom, detect_ma_convergence
+        from factors.macd import calc_macd
+        from factors.chanlun.divergence import check_daily_bottom_divergence
+        from factors.chanlun.fractal import identify_fractals
+
+        if detect_double_bottom(daily_df).tail(30).any():
+            labels.append("W底")
+
+        _, _, daily_hist = calc_macd(daily_df["close"])
+        if check_daily_bottom_divergence(daily_df, daily_hist):
+            labels.append("底背驰")
+
+        try:
+            frac_df = identify_fractals(daily_df.copy())
+            if "bottom_fractal" in frac_df.columns and frac_df["bottom_fractal"].tail(10).any():
+                labels.append("底分型")
+        except Exception:
+            pass
+
+        # 缠论买点
+        if weekly_dif is not None and weekly_dea is not None and weekly_hist is not None:
+            try:
+                from factors.chanlun.zhongshu import detect_buy_points, identify_zhongshu
+                zhongshus = identify_zhongshu(daily_df)
+                buy_points = detect_buy_points(daily_df, weekly_dif, weekly_dea, weekly_hist, zhongshus)
+                if buy_points:
+                    labels.append("缠论买点")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 均线型
+    try:
+        from factors.pattern import detect_ma_convergence
+        if detect_ma_convergence(daily_df).tail(20).any():
+            labels.append("均线粘合")
+    except Exception:
+        pass
+
+    # 确定主类别
+    breakthrough = {"涨停突破", "平台突破", "旗形突破"}
+    reversal = {"W底", "底背驰", "底分型", "缠论买点"}
+    avg = {"均线粘合"}
+
+    category = "无形态"
+    label_set = set(labels)
+    if label_set & breakthrough:
+        category = "突破型"
+    elif label_set & reversal:
+        category = "反转型"
+    elif label_set & avg:
+        category = "均线型"
+
+    if not labels:
+        labels.append("无形态")
+
+    return labels, category
 
 
 def _calc_pattern_multiplier(
@@ -255,6 +394,8 @@ def _calc_pattern_multiplier(
     有清晰形态的股票获得乘性提升，无形态的股票轻微折扣。
     - 涨停突破 + 经典形态 + 缠论买点 = 形态强度 (0-1)
     - multiplier = 0.90 + 形态强度 × 0.30
+
+    R4: 形态乘数为人工规则，不参与动态权重校准。
     """
     pattern_strength = 0.0
 
@@ -341,7 +482,7 @@ def _assess_stock_fund(fund_data: dict | None, daily_df: pd.DataFrame | None = N
         from factors.volume import _detect_price_trend
         trend_up = _detect_price_trend(daily_df["close"]) == "up"
 
-    return assess_fund_for_layer(
+    result = assess_fund_for_layer(
         has_northbound=fund_data.get("northbound_available", False),
         has_big_order=fund_data.get("big_order_available", False),
         has_margin=fund_data.get("margin_available", False),
@@ -352,6 +493,10 @@ def _assess_stock_fund(fund_data: dict | None, daily_df: pd.DataFrame | None = N
         big_order_direction=fund_data.get("big_order_direction", ""),
         for_layer=3, volume_health=vol_health, trend_up=trend_up,
     )
+
+    # D1: 追踪连续净流出天数
+    result["consecutive_outflow"] = fund_data.get("consecutive_outflow", False)
+    return result
 
 
 def check_exit_signals(symbol: str, daily_df: pd.DataFrame,
@@ -395,10 +540,13 @@ def check_exit_signals(symbol: str, daily_df: pd.DataFrame,
     if fund_data and fund_data.get("consecutive_outflow", False):
         signals.append("资金连续3日净流出")
 
-    # 5. 所属ETF指数跌出强势池
+    # 5. 所属ETF指数跌出强势池 (H9: L2失效减仓)
     if etf_tags and etf_strong_pool is not None:
         fallen = [t for t in etf_tags if t not in etf_strong_pool]
-        if fallen:
+        remaining = [t for t in etf_tags if t in etf_strong_pool]
+        if fallen and not remaining:
+            signals.append(f"L2 失效: {', '.join(fallen)} 全部跌出强势池，建议减仓")
+        elif fallen:
             signals.append(f"所属指数跌出强势池: {', '.join(fallen)}")
 
     # 6. L1 环境转弱
@@ -566,14 +714,20 @@ def check_upstream_freshness(
     l1_ok = True
     l1_note = "正常"
     failed_markets = []
+    checked_count = 0
     for market_name, daily_df in market_daily.items():
         if daily_df.empty or len(daily_df) < 26:
             continue
+        checked_count += 1
         result = check_daily_macd_above_ma20(daily_df["close"])
 
         if not result["all_ok"]:
             failed_markets.append(market_name)
             l1_ok = False
+
+    if checked_count == 0:
+        l1_ok = False
+        l1_note = "无可用市场数据"
 
     if not l1_ok:
         l1_note = f"L1 环境已恶化 ({', '.join(failed_markets)})，等待周末周频确认"

@@ -168,9 +168,18 @@ class TestAlpha:
 class TestThreshold:
     def test_default_top_k(self):
         from gate.threshold import default_top_k
-        assert default_top_k(10) == 3  # max(3, 10*0.3)
-        assert default_top_k(20) == 6  # max(3, 20*0.3)
-        assert default_top_k(3) == 3   # max(3, 1)
+        # volatile 默认: ratio=0.35, min_k=3
+        assert default_top_k(10) == 3  # max(3, int(10*0.35)) = max(3, 3)
+        assert default_top_k(20) == 7  # max(3, int(20*0.35)) = max(3, 7)
+        assert default_top_k(3) == 3   # max(3, int(3*0.35)) = max(3, 1)
+
+    def test_default_top_k_by_state(self):
+        from gate.threshold import default_top_k
+        assert default_top_k(10, "bull") == 4       # max(4, int(10*0.45)) = 4
+        assert default_top_k(10, "volatile") == 3   # max(3, int(10*0.35)) = 3
+        assert default_top_k(10, "weak") == 3       # max(3, int(10*0.25)) = 3
+        assert default_top_k(20, "bull") == 9       # max(4, int(20*0.45)) = 9
+        assert default_top_k(20, "weak") == 5       # max(3, int(20*0.25)) = 5
 
     def test_percentile_threshold(self):
         from gate.threshold import percentile_threshold

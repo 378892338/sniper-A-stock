@@ -29,6 +29,9 @@ BACKTEST_END = "2026-04-30"
 REBALANCE_FREQ = "monthly"  # 月度调仓
 BENCHMARK = "000905"        # 中证500
 
+# 状态机参数
+STATE_COOLING_WEEKS = 4  # 清仓后冷却周数
+
 # 股票池
 STOCK_POOL = "all_a"        # 全A股
 EXCLUDE_ST = True

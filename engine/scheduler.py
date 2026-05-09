@@ -140,18 +140,29 @@ class Scheduler:
         l1_passed = False
         if market_data:
             l1_result = assess_market(market_data, monthly_data=market_monthly)
-            l1_passed = l1_result.strong_count >= 2
+            l1_passed = l1_result.passed  # actual_position > 0
 
             # 更新状态机仓位目标
             if l1_passed:
                 self.sm.ctx.target_position_pct = l1_result.actual_position_pct
 
+            # §9: 阴跌 L3 暂停/恢复
+            if l1_result.yin_die_triggered:
+                self.sm.ctx.l3_suspended = True
+                self.sm.ctx._yin_die_recovery_weeks = 0
+                logger.warning(f"阴跌触发 L3 暂停: {l1_result.yin_die_markets}")
+            else:
+                self.sm.ctx._yin_die_recovery_weeks += 1
+                if self.sm.ctx._yin_die_recovery_weeks >= 2 and self.sm.ctx.l3_suspended:
+                    self.sm.ctx.l3_suspended = False
+                    logger.info(f"阴跌恢复: L3 重新启用 (连续{self.sm.ctx._yin_die_recovery_weeks}周非阴跌)")
+
         # ── 第二层: ETF分类指数 ──
         l2_result = None
         l2_passed = False
         if l1_passed and etf_data:
-            l1_state_map = {"牛市": "bull", "震荡": "volatile", "偏弱": "weak", "熊市": "bear"}
-            l1_market_state = l1_state_map.get(l1_result.market_state, "volatile")
+            from gate.market_state import MarketState
+            l1_market_state = MarketState.normalize(l1_result.market_state).value
             l2_result = assess_sectors(
                 etf_data, etf_monthly,
                 benchmark_close=csi300_close,
@@ -280,6 +291,7 @@ class Scheduler:
         # ── L3: 个股评估 + 选股 ──
         can_scan = (
             self.sm.can_buy()
+            and not self.sm.ctx.l3_suspended  # §9: 阴跌 L3 暂停
             and (freshness is None or freshness.l3_status != "全局暂停")
         )
         if can_scan and stock_candidates and self.sm.current_state() == SystemState.HUNTING:

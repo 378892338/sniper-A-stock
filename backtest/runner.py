@@ -13,6 +13,7 @@
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -121,10 +122,9 @@ def evaluate_l2(etf_weekly: dict, benchmark: pd.Series | None,
                 etf_monthly: dict | None = None) -> tuple[bool, list[str]]:
     """评估第二层。返回 (passed, strong_sectors)"""
     from gate.layer2_sector import assess_sectors
+    from gate.market_state import MarketState
 
-    # L1中文状态 → L2英文状态
-    _state_map = {"牛市": "bull", "震荡": "volatile", "偏弱": "weak", "熊市": "bear"}
-    l1_state_en = _state_map.get(l1_market_state, "volatile")
+    l1_state_en = MarketState.normalize(l1_market_state).value
 
     try:
         etf_data = {k: v.loc[:date_str] for k, v in etf_weekly.items() if not v.empty}
@@ -325,9 +325,11 @@ def precompute_all_stocks(
         compute_raw_factors, process_cross_section, aggregate_scores,
         apply_hard_filters, check_market_trend,
     )
+    import os
 
     symbols = store.stock_names
-    logger.info(f"预计算 L3 评分: {len(symbols)} 只股票（批量截面）...")
+    n_workers = min(os.cpu_count() or 4, 8)
+    logger.info(f"预计算 L3 评分: {len(symbols)} 只股票 (并行, {n_workers} workers)...")
 
     # ── 构建 symbol → etf_tags 映射（一次性）──
     symbol_etf_map = _build_etf_tags_map(store, symbols)
@@ -343,7 +345,7 @@ def precompute_all_stocks(
             all_month_ends.update(ends)
     all_month_ends = sorted(all_month_ends)
 
-    # 过滤到回测期间（需要前推6个月让 L3 缓存提前就绪）
+    # 过滤到回测期间
     if start is not None:
         pre_start = pd.Timestamp(start) - pd.DateOffset(months=6)
         all_month_ends = [m for m in all_month_ends if m >= pre_start]
@@ -357,42 +359,50 @@ def precompute_all_stocks(
 
     logger.info(f"月末时点: {len(all_month_ends)} 个 ({all_month_ends[0].date()} ~ {all_month_ends[-1].date()})")
 
+    def _compute_stock_factors(sym: str, month_end: pd.Timestamp) -> dict | None:
+        """线程安全的单只股票因子计算"""
+        daily = store.get_daily(sym)
+        if daily is None or len(daily) < 200:
+            return None
+        daily_cut = daily.loc[:month_end]
+        if len(daily_cut) < 50:
+            return None
+        weekly = store.get_weekly(sym)
+        monthly = store.get_monthly(sym)
+        weekly_cut = weekly.loc[:month_end] if weekly is not None else None
+        monthly_cut = monthly.loc[:month_end] if monthly is not None else None
+        f = compute_raw_factors(sym, daily_cut, weekly_cut, monthly_cut)
+        if f is not None:
+            f["_daily_cut"] = daily_cut
+            f["_weekly_cut"] = weekly_cut
+            f["_monthly_cut"] = monthly_cut
+        return f
+
     all_rows = []
 
     for month_end in tqdm(all_month_ends, desc="L3月截面"):
         month_str = month_end.strftime("%Y-%m")
 
-        # 大盘过滤（检查点4: t-1时点）
         alpha_mult = 1.0
         if hs300_daily is not None:
             alpha_mult = check_market_trend(hs300_daily, month_end)
 
-        # Step 1: 批量计算原始因子
+        # Step 1: 并行批量计算原始因子
         all_factors = []
-        for sym in symbols:
-            daily = store.get_daily(sym)
-            if daily is None or len(daily) < 200:
-                continue
-            daily_cut = daily.loc[:month_end]
-            if len(daily_cut) < 50:
-                continue
+        chunk_size = max(50, len(symbols) // n_workers)
+        symbol_chunks = [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
 
-            weekly = store.get_weekly(sym)
-            monthly = store.get_monthly(sym)
-            weekly_cut = weekly.loc[:month_end] if weekly is not None else None
-            monthly_cut = monthly.loc[:month_end] if monthly is not None else None
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = {}
+            for chunk_idx, sym_chunk in enumerate(symbol_chunks):
+                for sym in sym_chunk:
+                    future = executor.submit(_compute_stock_factors, sym, month_end)
+                    futures[future] = sym
 
-            # 检查点1: 月线数据严格不越界
-            if monthly_cut is not None and len(monthly_cut) > 0:
-                assert monthly_cut.index[-1] <= month_end, \
-                    f"{sym}: 月线越界 {monthly_cut.index[-1]} > {month_end}"
-
-            f = compute_raw_factors(sym, daily_cut, weekly_cut, monthly_cut)
-            if f is not None:
-                f["_daily_cut"] = daily_cut
-                f["_weekly_cut"] = weekly_cut
-                f["_monthly_cut"] = monthly_cut
-                all_factors.append(f)
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    all_factors.append(result)
 
         if not all_factors:
             continue
@@ -403,8 +413,14 @@ def precompute_all_stocks(
         if factors_df.empty:
             continue
 
-        # 分离元数据
-        meta_cols = ["_daily_cut", "_weekly_cut", "_monthly_cut"]
+        meta_cols = [
+            "_daily_cut", "_weekly_cut", "_monthly_cut",
+            "_daily_dif", "_daily_dea", "_daily_hist",
+            "_weekly_dif", "_weekly_dea", "_weekly_hist",
+            "_monthly_dif", "_monthly_dea", "_monthly_hist",
+            "_daily_top_fractal", "_daily_bottom_fractal",
+            "_weekly_top_fractal", "_weekly_bottom_fractal",
+        ]
         meta = {c: factors_df[c].tolist() if c in factors_df.columns else [] for c in meta_cols}
         factor_cols = [c for c in factors_df.columns if c not in meta_cols and c != "symbol"]
         factor_data = factors_df[["symbol"] + factor_cols].copy()
@@ -413,24 +429,34 @@ def precompute_all_stocks(
         if processed.empty:
             continue
 
-        # Step 3: 评分合成
         scores = aggregate_scores(processed, alpha_multiplier=alpha_mult)
 
-        # Step 4: 逐只过门
+        # 构建索引
+        sym_meta_map = {}
+        for i, sym_name in enumerate(factors_df["symbol"]):
+            sym_meta_map[sym_name] = {
+                "daily_cut": meta["_daily_cut"][i] if i < len(meta.get("_daily_cut", [])) else None,
+                "weekly_cut": meta["_weekly_cut"][i] if i < len(meta.get("_weekly_cut", [])) else None,
+                "monthly_cut": meta["_monthly_cut"][i] if i < len(meta.get("_monthly_cut", [])) else None,
+                "daily_dif": meta["_daily_dif"][i] if i < len(meta.get("_daily_dif", [])) else None,
+                "daily_dea": meta["_daily_dea"][i] if i < len(meta.get("_daily_dea", [])) else None,
+                "daily_hist": meta["_daily_hist"][i] if i < len(meta.get("_daily_hist", [])) else None,
+                "weekly_dif": meta["_weekly_dif"][i] if i < len(meta.get("_weekly_dif", [])) else None,
+                "weekly_dea": meta["_weekly_dea"][i] if i < len(meta.get("_weekly_dea", [])) else None,
+                "weekly_hist": meta["_weekly_hist"][i] if i < len(meta.get("_weekly_hist", [])) else None,
+                "monthly_dif": meta["_monthly_dif"][i] if i < len(meta.get("_monthly_dif", [])) else None,
+                "monthly_dea": meta["_monthly_dea"][i] if i < len(meta.get("_monthly_dea", [])) else None,
+                "monthly_hist": meta["_monthly_hist"][i] if i < len(meta.get("_monthly_hist", [])) else None,
+                "daily_top_fractal": meta["_daily_top_fractal"][i] if i < len(meta.get("_daily_top_fractal", [])) else None,
+                "daily_bottom_fractal": meta["_daily_bottom_fractal"][i] if i < len(meta.get("_daily_bottom_fractal", [])) else None,
+                "weekly_top_fractal": meta["_weekly_top_fractal"][i] if i < len(meta.get("_weekly_top_fractal", [])) else None,
+                "weekly_bottom_fractal": meta["_weekly_bottom_fractal"][i] if i < len(meta.get("_weekly_bottom_fractal", [])) else None,
+            }
+
         for idx, score_row in scores.iterrows():
             sym = idx
-            # 找回原始元数据
-            daily_cut = None
-            weekly_cut = None
-            monthly_cut = None
-            for i, s in enumerate(factors_df["symbol"]):
-                if s == sym:
-                    daily_cut = meta["_daily_cut"][i] if i < len(meta["_daily_cut"]) else None
-                    weekly_cut = meta["_weekly_cut"][i] if i < len(meta["_weekly_cut"]) else None
-                    monthly_cut = meta["_monthly_cut"][i] if i < len(meta["_monthly_cut"]) else None
-                    break
-
-            if daily_cut is None:
+            entry = sym_meta_map.get(sym)
+            if entry is None or entry["daily_cut"] is None:
                 continue
 
             factor_dict = {
@@ -440,12 +466,24 @@ def precompute_all_stocks(
                 "risk_score": float(score_row.get("risk_score", 0)),
             }
 
+            precomputed_macd = {}
+            for k in ("daily_dif", "daily_dea", "daily_hist",
+                       "weekly_dif", "weekly_dea", "weekly_hist",
+                       "monthly_dif", "monthly_dea", "monthly_hist",
+                       "daily_top_fractal", "daily_bottom_fractal",
+                       "weekly_top_fractal", "weekly_bottom_fractal"):
+                v = entry.get(k)
+                if v is not None:
+                    precomputed_macd[k] = v
+
             try:
                 v = assess_stock(
-                    sym, daily_df=daily_cut,
-                    weekly_df=weekly_cut,
-                    monthly_df=monthly_cut,
+                    sym, daily_df=entry["daily_cut"],
+                    weekly_df=entry["weekly_cut"],
+                    monthly_df=entry["monthly_cut"],
                     factor_scores=factor_dict,
+                    precomputed_macd=precomputed_macd if precomputed_macd else None,
+                    fast_mode=True,
                 )
                 all_rows.append({
                     "symbol": sym, "month": month_str,
@@ -683,7 +721,8 @@ def run_funnel_backtest(
                 for sym in holdings:
                     sdf = store.get_daily(sym)
                     if sdf is not None and ds in sdf.index:
-                        idx = sdf.index.get_loc(ds)
+                        idx_raw = sdf.index.get_loc(ds)
+                        idx = idx_raw.start if isinstance(idx_raw, slice) else int(idx_raw)
                         if idx > 0:
                             prev_c = sdf["close"].iloc[idx - 1]
                             cur_c = sdf["close"].iloc[idx]
@@ -701,7 +740,13 @@ def run_funnel_backtest(
 
             # 基准
             if benchmark is not None and ds in benchmark.index:
-                bm_idx = benchmark.index.get_loc(ds)
+                bm_idx_raw = benchmark.index.get_loc(ds)
+                if isinstance(bm_idx_raw, slice):
+                    bm_idx = bm_idx_raw.start
+                elif hasattr(bm_idx_raw, "item"):
+                    bm_idx = int(bm_idx_raw.item())
+                else:
+                    bm_idx = int(bm_idx_raw)
                 if bm_idx > 0:
                     bm_day_ret = float(benchmark.iloc[bm_idx] / benchmark.iloc[bm_idx - 1] - 1)
                     bm_curve.append(bm_curve[-1] * (1 + bm_day_ret))
@@ -779,7 +824,8 @@ def _fill_flat(curve, bm_curve, prev_date, cur_date, benchmark):
         curve.append(curve[-1])
         ds = str(d)[:10]
         if benchmark is not None and ds in benchmark.index:
-            bm_idx = benchmark.index.get_loc(ds)
+            bm_idx_raw = benchmark.index.get_loc(ds)
+            bm_idx = bm_idx_raw.start if isinstance(bm_idx_raw, slice) else int(bm_idx_raw)
             if bm_idx > 0:
                 bm_ret = float(benchmark.iloc[bm_idx] / benchmark.iloc[bm_idx - 1] - 1)
                 bm_curve.append(bm_curve[-1] * (1 + bm_ret))

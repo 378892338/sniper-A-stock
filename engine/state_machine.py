@@ -36,6 +36,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from config.settings import STATE_COOLING_WEEKS
 from core.logger import get_logger
 
 logger = get_logger("engine.state_machine")
@@ -77,6 +78,10 @@ class StateContext:
     # 降仓/清仓追踪
     _prev_target: float | None = None
     _liquidation_times: list = field(default_factory=list)
+
+    # §9: 阴跌 L3 暂停
+    l3_suspended: bool = False
+    _yin_die_recovery_weeks: int = 0  # 连续非阴跌周数
 
 
 class StateMachine:
@@ -122,6 +127,7 @@ class StateMachine:
                     if cross_level_jump:
                         self.transition(SystemState.SCANNING, "跨级跳覆盖冷却")
                     else:
+                        self._start_cooling()
                         self.transition(SystemState.COOLING, "第一层通过，进入冷却期")
                 else:
                     self.transition(SystemState.SCANNING, "第一层通过")
@@ -239,17 +245,9 @@ class StateMachine:
         return datetime.now() < self.ctx.cooling_until
 
     def _start_cooling(self):
-        """启动冷却期"""
-        liquidations = self.ctx.recent_liquidations + 1
-
-        if liquidations >= 3:
-            # 中期冷却：4周
-            self.ctx.cooling_until = datetime.now() + timedelta(weeks=4)
-            logger.warning(f"中期冷却: 4周 (8周内{liquidations}次清仓)")
-        else:
-            # 短期冷却：1周
-            self.ctx.cooling_until = datetime.now() + timedelta(weeks=1)
-            logger.info(f"短期冷却: 1周")
+        """启动冷却期 — 固定 {STATE_COOLING_WEEKS} 周，与清仓次数解耦"""
+        self.ctx.cooling_until = datetime.now() + timedelta(weeks=STATE_COOLING_WEEKS)
+        logger.info(f"进入冷却期: {STATE_COOLING_WEEKS}周 (冷却至 {self.ctx.cooling_until.isoformat()})")
 
     def _record_liquidation(self, reason: str = ""):
         """记录清仓事件（8周滑动窗口）"""

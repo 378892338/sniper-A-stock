@@ -77,7 +77,8 @@ class HealthTracker:
         return (now - last) >= self.recovery_interval
 
     def mark_recovery_attempt(self, endpoint: str):
-        self._last_recovery_attempt[endpoint] = time.time()
+        with self._lock:
+            self._last_recovery_attempt[endpoint] = time.time()
 
     @property
     def unavailable_endpoints(self) -> set[str]:
