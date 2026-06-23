@@ -56,7 +56,7 @@
 - **触发场景**: `_verify_daily_bars_coverage` 要求最新日期股票数 ≥3000。批量下载 2924 只，但 1897 只是 `INSERT OR IGNORE`（数据已存在），实际新写入仅 903 只。903 < 3000 → 判定不达标 → 触发第二轮 `weekly_update.main()` → 死循环。
 - **根因**: COUNT 阈值无法区分"数据真的缺失"和"数据已存在无需写入"。INSERT OR IGNORE 被算失败但 SQLite 数据正确。
 - **正确做法**: 删除 `MIN_COVERAGE` 阈值，只验证 `MAX(date) >= today`。COUNT 阈值仅在防御 baostock `mark_updated` 空写时有意义，baostock 弃用后无价值。
-- **效能评分**: 0/0
+- **效能评分**: 1/1
 - **状态**: ACTIVE
 
 ## [LESSON-008] [发现型] Claude Code Bash hook 默认解析 stdout 为 JSON 导致频繁报错
@@ -71,7 +71,7 @@
 - **创建**: 2026-06-24
 - **触发场景**: 日报中 300401 同时出现在"止损已触发 建议离场"和"可入场"两个互斥状态中。根因是 `entry_pass` 过滤只检查了 `soft_min_score` 阈值，未检查 `positions` 是否已持有。
 - **正确做法**: 构建 `entry_pass` 时用 `held = set(positions.keys())` 过滤，`if c["symbol"] in held: continue`。`collect_l2` 产生的 `candidates` 是纯评分排序，必须与 `positions` 交叉排除后再展示。
-- **效能评分**: 0/0
+- **效能评分**: 1/1
 - **状态**: ACTIVE
 
 ## [LESSON-010] [决策型] 盘中初稿不能复用 generate_html — BacktestEngine.run() 会意外开仓
