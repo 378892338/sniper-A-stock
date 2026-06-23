@@ -58,3 +58,11 @@
 - **正确做法**: 删除 `MIN_COVERAGE` 阈值，只验证 `MAX(date) >= today`。COUNT 阈值仅在防御 baostock `mark_updated` 空写时有意义，baostock 弃用后无价值。
 - **效能评分**: 0/0
 - **状态**: ACTIVE
+
+## [LESSON-008] [发现型] Claude Code Bash hook 默认解析 stdout 为 JSON 导致频繁报错
+- **创建**: 2026-06-23
+- **触发场景**: `PreToolUse:Bash hook error — Hook JSON output validation failed — (root): Invalid input` 频繁弹出。hook 脚本用 `echo` 输出纯文本日志，框架默认尝试解析 stdout 为 JSON 失败。
+- **根因**: `settings.json` 中 hook 未声明 `"output": "text"`，框架按默认 JSON 模式解析所有 stdout 输出。
+- **正确做法**: 所有非 JSON 输出的 hook 必须加 `"output": "text"`。或脚本层面将所有日志重定向到 stderr（`>&2`），stdout 保持空。
+- **效能评分**: 0/0
+- **状态**: ACTIVE
