@@ -66,3 +66,10 @@
 - **正确做法**: 所有非 JSON 输出的 hook 必须加 `"output": "text"`。或脚本层面将所有日志重定向到 stderr（`>&2`），stdout 保持空。
 - **效能评分**: 0/0
 - **状态**: ACTIVE
+
+## [LESSON-009] [纠错型] 日报"可入场"候选未排除已持仓股票导致逻辑矛盾
+- **创建**: 2026-06-24
+- **触发场景**: 日报中 300401 同时出现在"止损已触发 建议离场"和"可入场"两个互斥状态中。根因是 `entry_pass` 过滤只检查了 `soft_min_score` 阈值，未检查 `positions` 是否已持有。
+- **正确做法**: 构建 `entry_pass` 时用 `held = set(positions.keys())` 过滤，`if c["symbol"] in held: continue`。`collect_l2` 产生的 `candidates` 是纯评分排序，必须与 `positions` 交叉排除后再展示。
+- **效能评分**: 0/0
+- **状态**: ACTIVE
