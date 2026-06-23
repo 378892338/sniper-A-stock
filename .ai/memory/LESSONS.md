@@ -73,3 +73,17 @@
 - **正确做法**: 构建 `entry_pass` 时用 `held = set(positions.keys())` 过滤，`if c["symbol"] in held: continue`。`collect_l2` 产生的 `candidates` 是纯评分排序，必须与 `positions` 交叉排除后再展示。
 - **效能评分**: 0/0
 - **状态**: ACTIVE
+
+## [LESSON-010] [决策型] 盘中初稿不能复用 generate_html — BacktestEngine.run() 会意外开仓
+- **创建**: 2026-06-24
+- **触发场景**: 14:45 盘中初稿直接用 `generate_html()` → `BacktestEngine.run(date,date)` 用盘中价建仓，违反 T+1。改跑 `engine.run(yesterday)` 又遇隔离失真。
+- **正确做法**: 独立 `generate_intraday_html()`，不调引擎。持仓从 `position_snapshot.parquet`（16:00 管道写）读，市价从 daily_bars 最新 close 推算。
+- **效能评分**: 0/0
+- **状态**: ACTIVE
+
+## [LESSON-011] [纠错型] PID 文件锁必须心跳防系统休眠僵死
+- **创建**: 2026-06-24
+- **触发场景**: 12:00 管道启动 → 系统休眠 → 进程挂起 → 16:00 查锁 PID 仍存在 → 跳过正式版。
+- **正确做法**: 锁文件含 PID+start_time。每 60s 更新 mtime（os.utime）。检查时若心跳>180s → 僵死 → 覆盖锁。Windows 用 `tasklist /FI "PID eq N"` 替代 kill -0。
+- **效能评分**: 0/0
+- **状态**: ACTIVE
