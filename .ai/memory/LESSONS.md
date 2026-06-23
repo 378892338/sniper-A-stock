@@ -50,3 +50,11 @@
 - **正确做法**: 解析 HTTP 响应头中的 `Content-Length`，精确控制 body 读取范围。`Content-Length` 缺失时才 fallback 到读至 socket close。**必须加总超时 deadline 守卫**（`time.time() + 30s`），防止网络分区导致 recv 永久阻塞。
 - **效能评分**: 0/0
 - **状态**: ACTIVE
+
+## [LESSON-007] [纠错型] COUNT 覆盖率阈值 + INSERT OR IGNORE 导致 _wait_for_data 死循环
+- **创建**: 2026-06-23
+- **触发场景**: `_verify_daily_bars_coverage` 要求最新日期股票数 ≥3000。批量下载 2924 只，但 1897 只是 `INSERT OR IGNORE`（数据已存在），实际新写入仅 903 只。903 < 3000 → 判定不达标 → 触发第二轮 `weekly_update.main()` → 死循环。
+- **根因**: COUNT 阈值无法区分"数据真的缺失"和"数据已存在无需写入"。INSERT OR IGNORE 被算失败但 SQLite 数据正确。
+- **正确做法**: 删除 `MIN_COVERAGE` 阈值，只验证 `MAX(date) >= today`。COUNT 阈值仅在防御 baostock `mark_updated` 空写时有意义，baostock 弃用后无价值。
+- **效能评分**: 0/0
+- **状态**: ACTIVE

@@ -6,3 +6,4 @@
 - [LESSON-004 日报管道不应因数据源故障而终止](LESSONS.md#lesson-004-决策型-日报管道不应因数据源故障而终止) — 2026-06-23
 - [LESSON-005 外部代码审查可能包含完全虚构的类名和架构](LESSONS.md#lesson-005-纠错型-外部代码审查可能包含完全虚构的类名和架构) — 2026-06-23
 - [LESSON-006 HTTP 响应解析必须基于 Content-Length 而非 Connection: close](LESSONS.md#lesson-006-模式型-http-响应解析必须基于-content-length-而非-connection-close) — 2026-06-23
+- [LESSON-007 COUNT 覆盖率阈值 + INSERT OR IGNORE 导致 _wait_for_data 死循环](LESSONS.md#lesson-007-纠错型-count-覆盖率阈值--insert-or-ignore-导致-_wait_for_data-死循环) — 2026-06-23
