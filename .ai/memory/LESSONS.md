@@ -26,14 +26,14 @@
 - **创建**: 2026-06-23
 - **触发场景**: 批量下载 4235 只股票时，前几只股票每个故障源浪费 ~56s（15s 超时 × 3 次重试），多线程同时卡住。新增 `_probe_source_health()` 后，1 只股票预探测所有源，故障源全局标记跳过，后续批量阶段零超时浪费。
 - **正确做法**: 在 `_fetch_failed_with_fetcher()` 开头调用 `_probe_source_health("600436", start, end)`，使用代表性股票遍历 `DATA_SOURCE_PREFERENCE`，失败源自动被 `HealthTracker` 标记不可用。批量阶段 `Fetcher` 直接跳过不可用源。
-- **效能评分**: 0/0
+- **效能评分**: 1/1
 - **状态**: ACTIVE
 
 ## [LESSON-004] [决策型] 日报管道不应因数据源故障而终止
 - **创建**: 2026-06-23
 - **触发场景**: `run_pipeline.py` 的 `_run_single_day()` 中，当 `_wait_for_data()` 返回 False 时直接 `return False` 退出，导致即使有历史数据也无法生成日报。2026-06-23 日报因此未生成。
 - **正确做法**: 数据源故障时改为 `logger.warning` + 继续执行后续步骤（信号刷新→L2预计算→策略→日报→Obsidian）。现有数据仍可生成有价值的日报。
-- **效能评分**: 0/0
+- **效能评分**: 1/1
 - **状态**: ACTIVE
 
 ## [LESSON-005] [纠错型] 外部代码审查可能包含完全虚构的类名和架构
@@ -64,7 +64,7 @@
 - **触发场景**: `PreToolUse:Bash hook error — Hook JSON output validation failed — (root): Invalid input` 频繁弹出。hook 脚本用 `echo` 输出纯文本日志，框架默认尝试解析 stdout 为 JSON 失败。
 - **根因**: `settings.json` 中 hook 未声明 `"output": "text"`，框架按默认 JSON 模式解析所有 stdout 输出。
 - **正确做法**: 所有非 JSON 输出的 hook 必须加 `"output": "text"`。或脚本层面将所有日志重定向到 stderr（`>&2`），stdout 保持空。
-- **效能评分**: 0/0
+- **效能评分**: 1/1
 - **状态**: ACTIVE
 
 ## [LESSON-009] [纠错型] 日报"可入场"候选未排除已持仓股票导致逻辑矛盾
@@ -85,5 +85,19 @@
 - **创建**: 2026-06-24
 - **触发场景**: 12:00 管道启动 → 系统休眠 → 进程挂起 → 16:00 查锁 PID 仍存在 → 跳过正式版。
 - **正确做法**: 锁文件含 PID+start_time。每 60s 更新 mtime（os.utime）。检查时若心跳>180s → 僵死 → 覆盖锁。Windows 用 `tasklist /FI "PID eq N"` 替代 kill -0。
+- **效能评分**: 0/0
+- **状态**: ACTIVE
+
+## [LESSON-012] [发现型] mootdx Quotes.factory(heartbeat=True) 在 Windows 下导致 TCP 连接卡死
+- **创建**: 2026-06-24
+- **触发场景**: 编写 mootdx.py 时 `Quotes.factory(heartbeat=True, bestip=True)` 导致实例创建永久阻塞。改为 `heartbeat=False, bestip=False` 后立即响应。
+- **正确做法**: `Quotes.factory(market='std', timeout=15, heartbeat=False, bestip=False)`。RateLimiter 0.3s 限流 + @retry(2) 足够覆盖偶发 TCP 抖动。
+- **效能评分**: 0/0
+- **状态**: ACTIVE
+
+## [LESSON-013] [模式型] 外部 API 阻断时用 _disabled 标记 + register 但不激活的隔离模式
+- **创建**: 2026-06-24
+- **触发场景**: eastmoney_fundflow.py / eastmoney_dt.py 在 API 阻断期无法端到端测试，但代码已完成。`is_available()` 直接返回 False，仍注册到工厂字典。
+- **正确做法**: 数据源类注册到 _sources 但不参与降级链。API 恢复后只需改 is_available() 逻辑即可激活。不破坏现有降级链，不留 syntax error 残留。
 - **效能评分**: 0/0
 - **状态**: ACTIVE
