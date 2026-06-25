@@ -47,6 +47,10 @@ class SinaDataSource(DataSource):
 
     ENDPOINT = "sina_price"
 
+    def __init__(self):
+        from shared.anticrawl import AntiCrawlGuard
+        self.guard = AntiCrawlGuard("sina")
+
     def name(self) -> str:
         return "sina"
 
@@ -54,17 +58,25 @@ class SinaDataSource(DataSource):
         return health_tracker.is_available(self.ENDPOINT)
 
     def _request_jsonp(self, url: str, params: dict) -> dict | list:
-        """请求新浪 JSONP 接口并解析"""
+        """请求新浪 JSONP 接口并解析（集成 AntiCrawlGuard 反爬）"""
         import urllib.request
         import urllib.parse
+
+        # 反爬等待
+        self.guard.wait()
 
         query = urllib.parse.urlencode(params)
         full_url = f"{url}?{query}"
         req = urllib.request.Request(full_url)
-        req.add_header("User-Agent", "Mozilla/5.0")
-        req.add_header("Referer", "https://finance.sina.com.cn/")
+
+        # 使用守卫的请求头
+        for k, v in self.guard.get_headers(
+            custom_referer="https://finance.sina.com.cn/"
+        ).items():
+            req.add_header(k, v)
 
         with urllib.request.urlopen(req, timeout=15) as resp:
+            self.guard.update_cookies(dict(resp.headers))
             text = resp.read().decode("gbk", errors="replace")
 
         # JSONP → JSON (去除回调函数包装)
@@ -99,9 +111,11 @@ class SinaDataSource(DataSource):
             df["symbol"] = symbol
 
             health_tracker.record_success(self.ENDPOINT)
+            self.guard.on_success()
             return df.set_index("date") if not df.empty else pd.DataFrame()
         except Exception as e:
             health_tracker.record_failure(self.ENDPOINT)
+            self.guard.on_failure()
             logger.warning(f"sina 获取个股 {symbol} 失败: {e}")
             raise
 

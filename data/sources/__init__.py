@@ -83,8 +83,9 @@ register_source("eastmoney", EastMoneyDataSource)
 from data.sources.sina import SinaDataSource
 register_source("sina", SinaDataSource)
 
-from data.sources.akshare import AkshareDataSource, AkshareFundFlowSource
+from data.sources.akshare import AkshareDataSource, AkshareFundFlowSource, AkshareDailySource
 register_source("akshare", AkshareDataSource)
+register_source("akshare_daily", AkshareDailySource)
 register_fundflow_source("akshare", AkshareFundFlowSource)
 
 # tushare 可选安装（需token）
@@ -101,3 +102,32 @@ try:
     register_source("baostock", BaostockDataSource)
 except ImportError:
     pass
+
+# jqdata 聚宽（需 jqdatasdk + 账号配置）
+try:
+    from data.sources.jqdata import JQDataSource
+    register_source("jqdata", JQDataSource)
+except ImportError:
+    pass
+
+# mootdx 通达信 TCP 直连（免费不封 IP）
+try:
+    from data.sources.mootdx import MootdxSource
+    register_source("mootdx", MootdxSource)
+except ImportError:
+    pass
+
+# 10jqka / 同花顺 直连（免费、无需 token，作为 jqdata 降级后备）
+try:
+    from data.sources.hexin import HexinDataSource
+    register_source("10jqka", HexinDataSource)
+except ImportError:
+    pass
+
+# EastMoney 资金流直连（disabled：API 恢复后激活）
+from data.sources.eastmoney_fundflow import EastMoneyFundFlowSource
+register_source("eastmoney_fundflow", EastMoneyFundFlowSource)
+
+# EastMoney 龙虎榜直连（disabled：API 恢复后激活）
+from data.sources.eastmoney_dt import EastMoneyDTSource
+register_source("eastmoney_dt", EastMoneyDTSource)

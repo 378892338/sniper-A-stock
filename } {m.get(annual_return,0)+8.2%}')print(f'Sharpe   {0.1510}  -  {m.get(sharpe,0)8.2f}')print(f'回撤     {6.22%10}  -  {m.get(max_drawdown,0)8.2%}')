@@ -1,0 +1,4 @@
+  File "<string>", line 31
+    print(f'年化收益: {+3.33%:>10} {:-
+                        ^
+SyntaxError: f-string: expecting '=', or '!', or ':', or '}'

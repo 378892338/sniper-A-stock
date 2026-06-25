@@ -36,6 +36,10 @@ class TushareDataSource(DataSource):
     _HAS_PRICE_PERMISSION: bool | None = None   # None=未检测, True=可用, False=不可用
     ENDPOINT = "tushare_price"
 
+    def __init__(self):
+        from shared.anticrawl import AntiCrawlGuard
+        self.guard = AntiCrawlGuard("tushare")
+
     def name(self) -> str:
         return "tushare"
 
@@ -49,6 +53,7 @@ class TushareDataSource(DataSource):
 
     @retry(max_retries=3, base_delay=1.0)
     def fetch_daily(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+        self.guard.wait()
         pro = _get_pro()
         if pro is None:
             return pd.DataFrame()
@@ -69,15 +74,18 @@ class TushareDataSource(DataSource):
             df["symbol"] = symbol
             df = df.sort_values("date")
             health_tracker.record_success(self.ENDPOINT)
+            self.guard.on_success()
             return df.set_index("date")
         except Exception as e:
             err_msg = str(e)
             _mark_permission_denied(err_msg)
             health_tracker.record_failure(self.ENDPOINT)
+            self.guard.on_failure()
             logger.warning(f"tushare 获取个股 {symbol} 失败: {e}")
             return pd.DataFrame()
 
     def fetch_index_daily(self, code: str, start: str, end: str) -> pd.DataFrame:
+        self.guard.wait()
         pro = _get_pro()
         if pro is None:
             return pd.DataFrame()
@@ -98,11 +106,13 @@ class TushareDataSource(DataSource):
             df["symbol"] = code
             df = df.sort_values("date")
             health_tracker.record_success(self.ENDPOINT)
+            self.guard.on_success()
             return df.set_index("date")
         except Exception as e:
             err_msg = str(e)
             _mark_permission_denied(err_msg)
             health_tracker.record_failure(self.ENDPOINT)
+            self.guard.on_failure()
             logger.warning(f"tushare 获取指数 {code} 失败: {e}")
             return pd.DataFrame()
 

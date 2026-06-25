@@ -26,6 +26,7 @@ _AGG = {
     "high": "max",
     "low": "min",
     "volume": "sum",
+    "amount": "sum",
 }
 
 
@@ -119,6 +120,38 @@ class DataStore:
         cache_dir = Path(cache_dir)
         store = cls()
 
+        # 优先从 consolidated daily_bars.parquet 加载（更快）
+        consolidated = cache_dir / "daily_bars.parquet"
+        if consolidated.exists():
+            try:
+                df = pd.read_parquet(consolidated)
+                if "symbol" in df.columns and not df.empty:
+                    for sym, grp in df.groupby("symbol"):
+                        grp = grp.copy()
+                        if "date" in grp.columns:
+                            grp["date"] = pd.to_datetime(grp["date"])
+                            grp = grp.set_index("date").sort_index()
+                        if len(grp) >= 200:
+                            store.add_daily(sym, grp)
+                    n_loaded = len(store.stock_names)
+                    logger.info(f"DataStore 从 consolidated parquet 加载: {n_loaded} 只个股")
+                    # 仍然加载指数（指数不在 daily_bars.parquet 中）
+                    for p in cache_dir.glob("market_daily_*.parquet"):
+                        name = p.stem.replace("market_daily_", "")
+                        df = pd.read_parquet(p)
+                        if not df.empty:
+                            store.add_daily(name, df)
+                    for p in cache_dir.glob("etf_daily_*.parquet"):
+                        name = p.stem.replace("etf_daily_", "")
+                        df = pd.read_parquet(p)
+                        if not df.empty:
+                            store.add_daily(name, df)
+                    logger.info(f"DataStore 总加载: {len(store)} 条日线")
+                    return store
+            except Exception as e:
+                logger.warning(f"consolidated parquet 加载失败，回退 per-stock: {e}")
+
+        # 回退：per-stock parquet 加载
         # 市场指数日线（仅加载新格式 market_daily_*，避免旧格式 market_*_daily 覆盖最新数据）
         for p in cache_dir.glob("market_daily_*.parquet"):
             name = p.stem.replace("market_daily_", "")

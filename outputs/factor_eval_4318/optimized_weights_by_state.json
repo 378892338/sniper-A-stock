@@ -1,0 +1,74 @@
+{
+  "metadata": {
+    "calibrated_at": "2026-05-11T16:35:23.127280",
+    "states_computed": [
+      "偏弱",
+      "熊市",
+      "牛市",
+      "震荡"
+    ],
+    "n_factors": 13
+  },
+  "states": {
+    "牛市": {
+      "a158_kl_mid": 0.0,
+      "a158_kl_mid_5": 12.2,
+      "a158_low_vwap": 11.82,
+      "bottom_divergence": 0.0,
+      "bottom_fractal": 1.56,
+      "close_position": 0.0,
+      "low_volatility": 8.4,
+      "momentum_12_1": 1.96,
+      "reversal_20": 15.73,
+      "trend_macd_5dim": 2.66,
+      "turnover_stability": 25.0,
+      "volume_reversal": 9.99,
+      "weekly_deviation": 10.68
+    },
+    "震荡": {
+      "a158_kl_mid": 10.66,
+      "a158_kl_mid_5": 7.15,
+      "a158_low_vwap": 13.5,
+      "bottom_divergence": 0.0,
+      "bottom_fractal": 0.0,
+      "close_position": 5.39,
+      "low_volatility": 19.29,
+      "momentum_12_1": 8.67,
+      "reversal_20": 13.98,
+      "trend_macd_5dim": 0.0,
+      "turnover_stability": 0.0,
+      "volume_reversal": 12.51,
+      "weekly_deviation": 8.85
+    },
+    "偏弱": {
+      "a158_kl_mid": 0.0,
+      "a158_kl_mid_5": 9.8,
+      "a158_low_vwap": 16.37,
+      "bottom_divergence": 8.58,
+      "bottom_fractal": 0.0,
+      "close_position": 0.0,
+      "low_volatility": 14.7,
+      "momentum_12_1": 0.97,
+      "reversal_20": 12.28,
+      "trend_macd_5dim": 0.0,
+      "turnover_stability": 14.36,
+      "volume_reversal": 12.81,
+      "weekly_deviation": 10.13
+    },
+    "熊市": {
+      "a158_kl_mid": 3.23,
+      "a158_kl_mid_5": 9.19,
+      "a158_low_vwap": 16.13,
+      "bottom_divergence": 6.95,
+      "bottom_fractal": 0.0,
+      "close_position": 4.66,
+      "low_volatility": 10.19,
+      "momentum_12_1": 1.4,
+      "reversal_20": 15.11,
+      "trend_macd_5dim": 0.0,
+      "turnover_stability": 6.48,
+      "volume_reversal": 17.07,
+      "weekly_deviation": 9.59
+    }
+  }
+}

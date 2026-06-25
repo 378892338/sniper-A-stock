@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>量化日报 2026-01-05</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+       background: #f0f2f5; color: #1a1a2e; font-size: 14px; line-height: 1.6; }
+.container { max-width: 960px; margin: 0 auto; padding: 20px; }
+.header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+          color: #fff; padding: 28px 32px; border-radius: 12px; margin-bottom: 20px; }
+.header h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.header .sub { opacity: .75; font-size: 13px; }
+.card { background: #fff; border-radius: 10px; padding: 20px 24px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.card-title { font-size: 15px; font-weight: 600; color: #1a1a2e;
+              margin-bottom: 14px; padding-bottom: 8px;
+              border-bottom: 2px solid #e8e8ef; }
+.tag { display: inline-block; padding: 2px 10px; border-radius: 4px;
+       font-size: 12px; font-weight: 600; }
+.tag-green { background: #dcfce7; color: #166534; }
+.tag-yellow { background: #fef9c3; color: #854d0e; }
+.tag-orange { background: #ffedd5; color: #9a3412; }
+.tag-red { background: #fee2e2; color: #991b1b; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+.stat { text-align: center; padding: 12px; background: #f8f9fb; border-radius: 8px; }
+.stat .val { font-size: 22px; font-weight: 700; }
+.stat .lbl { font-size: 11px; color: #6b7280; margin-top: 2px; }
+.stat .sub { font-size: 12px; margin-top: 2px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #f8f9fb; padding: 8px 10px; text-align: left;
+     font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+tr:hover td { background: #fafafa; }
+.action-list { list-style: none; padding: 0; }
+.action-list li { padding: 10px 14px; margin-bottom: 6px; border-radius: 6px;
+                  border-left: 4px solid; display: flex; align-items: center; gap: 10px; }
+.action-high { background: #fef2f2; border-color: #dc2626; }
+.action-mid { background: #fffbeb; border-color: #d97706; }
+.action-low { background: #f0fdf4; border-color: #16a34a; }
+.action-list .num { font-weight: 700; font-size: 13px; min-width: 28px; }
+.action-list .txt { flex: 1; }
+.action-list .reason { font-size: 12px; color: #6b7280; }
+.trend-up { color: #dc2626; }
+.trend-down { color: #16a34a; }
+.trend-flat { color: #6b7280; }
+.fold { margin-top: 12px; }
+.fold summary { cursor: pointer; font-weight: 600; color: #6b7280;
+               padding: 6px 0; font-size: 13px; }
+.fold[open] summary { color: #1a1a2e; }
+.l0-gauge { display: flex; align-items: center; gap: 16px; margin: 8px 0; }
+.l0-gauge .bar-wrap { flex: 1; height: 18px; background: #e5e7eb; border-radius: 9px;
+                      position: relative; overflow: hidden; }
+.l0-gauge .bar { height: 100%; border-radius: 9px; transition: width .5s; }
+.l0-gauge .bar-label { position: absolute; right: 8px; top: 0; line-height: 18px;
+                       font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.5); }
+.l0-dims { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.l0-dim { flex: 1; min-width: 100px; padding: 8px 10px; border-radius: 6px;
+          background: #f8f9fb; text-align: center; }
+.l0-dim .dim-val { font-size: 18px; font-weight: 700; }
+.l0-dim .dim-lbl { font-size: 11px; color: #6b7280; }
+@media (max-width: 640px) {
+  .grid-2, .grid-4 { grid-template-columns: 1fr; }
+  .l0-dims { flex-direction: column; }
+  .container { padding: 10px; }
+}
+@media print {
+  .card { break-inside: avoid; }
+  .fold[open] summary { color: #1a1a2e; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+  <h1>📊 量化日报 · 2026-01-05</h1>
+  <div class="sub">狙击手 V3.7 ｜ 生成时间 2026-06-06 20:50</div>
+</div>
+<div class="card">
+<div class="card-title">📋 一、执行摘要</div>
+<div class="l0-gauge">
+  <span style="font-size:28px">🟢</span>
+  <div style="flex:1">
+    <div style="font-size:16px;font-weight:600;color:#16a34a">市场强势 · 合成评分 71.7</div>
+    <div class="bar-wrap" style="margin-top:4px">
+      <div class="bar" style="width:72%;background:#16a34a"></div>
+      <span class="bar-label">72</span>
+    </div>
+  </div>
+</div>
+<div class="grid-2" style="margin-top:12px">
+  <div class="grid-4" style="grid-column:1">
+    <div class="stat"><div class="val" style="color:#65a30d">1.34%</div><div class="lbl">总收益</div></div>
+    <div class="stat"><div class="val">1,013,375</div><div class="lbl">总资产</div></div>
+    <div class="stat"><div class="val">5</div><div class="lbl">持仓数</div></div>
+    <div class="stat"><div class="val">49%</div><div class="lbl">暴露比例</div></div>
+  </div>
+  <div class="stat" style="grid-column:2;display:flex;flex-direction:column;justify-content:center">
+    <div style="font-size:13px;color:#6b7280">风控状态</div>
+    <div style="font-size:24px;font-weight:700;color:#16a34a;margin:4px 0">🟢</div>
+    <div style="font-size:12px;color:#6b7280">
+      回撤 0.00% ｜ 限制 5%
+    </div>
+  </div>
+</div>
+<div style="margin-top:12px">
+  <div style="font-size:13px;font-weight:600;margin-bottom:6px">今日操作清单</div>
+  <ul class="action-list">
+    <li class="action-high"><span class="num">#1</span><span class="tag tag-red">高</span><span class="txt"><strong>积极开仓</strong><div class="reason">L0≥70(72)，市场强势，可积极选股开仓</div></span></li>
+    <li class="action-mid"><span class="num">#2</span><span class="tag tag-yellow">中</span><span class="txt"><strong>持仓已达上限</strong><div class="reason">当前 5/5 只，需等待平仓</div></span></li>
+  </ul></div></div>
+
+<div class="card">
+  <div class="card-title">📈 二、市场深度分析</div>
+
+  <div style="font-weight:600;font-size:14px;color:#16a34a">L0 合成评分 🟢 71.7 — 市场强势</div>
+  <div style="font-size:12px;color:#6b7280;margin:4px 0 8px">↑ 上升 ｜ 5日序列: [56, 55, 55, 53, 72]</div>
+
+  <div class="l0-dims"><div class="l0-dim"><div class="dim-val" style="color:#16a34a">97.3</div><div class="dim-lbl">趋势 (40%)</div></div><div class="l0-dim"><div class="dim-val" style="color:#ea580c">43.3</div><div class="dim-lbl">量能 (30%)</div></div><div class="l0-dim"><div class="dim-val" style="color:#16a34a">74.2</div><div class="dim-lbl">宽度 (20%)</div></div><div class="l0-dim"><div class="dim-val" style="color:#ea580c">50.0</div><div class="dim-lbl">北向 (10%)</div></div></div>
+
+  <details class="fold" open>
+  <summary>L1 强势板块</summary>
+  <div class="table-wrap"><table><tr><th>#</th><th>板块</th><th>综合</th><th>动量</th><th>资金</th><th>广度</th><th>热度</th></tr><tr><td>1</td><td><strong>国防军工</strong></td><td>90</td><td>100</td><td>100</td><td>50</td><td>100</td></tr><tr><td>2</td><td><strong>传媒</strong></td><td>83</td><td>84</td><td>100</td><td>50</td><td>97</td></tr><tr><td>3</td><td><strong>有色金属</strong></td><td>78</td><td>72</td><td>100</td><td>50</td><td>90</td></tr><tr><td>4</td><td><strong>房地产</strong></td><td>78</td><td>69</td><td>100</td><td>50</td><td>94</td></tr><tr><td>5</td><td><strong>计算机</strong></td><td>75</td><td>66</td><td>100</td><td>50</td><td>87</td></tr></table></div>
+  </details>
+
+  <details class="fold" open>
+  <summary>L2 候选个股及买卖建议</summary>
+  <div class="table-wrap"><table><tr><th>代码</th><th>评分</th><th>板块排名</th><th>建议</th><th>参考价</th><th>止损</th></tr><tr><td>301153</td><td>100.0</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>26.15</td><td>26.93</td></tr><tr><td>301330</td><td>99.9</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>38.95</td><td>40.12</td></tr><tr><td>300058</td><td>99.7</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>13.82</td><td>14.23</td></tr><tr><td>688258</td><td>99.6</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>91.88</td><td>94.64</td></tr><tr><td>300561</td><td>99.5</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>17.65</td><td>18.18</td></tr><tr><td>002151</td><td>99.4</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>49.97</td><td>51.47</td></tr><tr><td>600118</td><td>99.2</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>99.45</td><td>102.43</td></tr><tr><td>688011</td><td>99.1</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>65.65</td><td>67.62</td></tr><tr><td>601698</td><td>99.0</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>39.30</td><td>40.48</td></tr><tr><td>688523</td><td>98.9</td><td>—</td><td><span class="tag tag-green">买入</span></td><td>62.19</td><td>64.06</td></tr></table></div>
+  </details>
+</div>
+
+<div class="card">
+  <div class="card-title">💼 三、持仓与交易建议</div>
+  <div class="table-wrap"><table>
+    <tr><th>股票</th><th>盈亏</th><th>板块</th><th>评分</th><th>入场价</th><th>现价</th><th>持有</th><th>风控</th><th>建议</th></tr>
+    <tr><td><strong>688523</strong></td><td style='color:#16a34a;font-weight:600'>+7.18%</td><td>国防军工</td><td>99</td><td>57.95</td><td>62.19</td><td>0天</td><td><span class="tag tag-green">安全</span></td><td style='color:#65a30d;font-size:12px'>继续持有</td></tr><tr><td><strong>003009</strong></td><td style='color:#16a34a;font-weight:600'>+5.39%</td><td>国防军工</td><td>98</td><td>80.38</td><td>84.82</td><td>0天</td><td><span class="tag tag-green">安全</span></td><td style='color:#65a30d;font-size:12px'>继续持有</td></tr><tr><td><strong>688011</strong></td><td style='color:#65a30d;font-weight:600'>+2.61%</td><td>国防军工</td><td>99</td><td>63.90</td><td>65.65</td><td>0天</td><td><span class="tag tag-green">安全</span></td><td style='color:#65a30d;font-size:12px'>继续持有</td></tr><tr><td><strong>600118</strong></td><td style='color:#ea580c;font-weight:600'>-1.66%</td><td>国防军工</td><td>100</td><td>101.00</td><td>99.45</td><td>0天</td><td><span class="tag tag-orange">接近</span></td><td style='color:#dc2626;font-size:12px'>建议离场</td></tr><tr><td><strong>000547</strong></td><td style='color:#65a30d;font-weight:600'>+0.09%</td><td>国防军工</td><td>98</td><td>33.01</td><td>33.08</td><td>0天</td><td><span class="tag tag-green">安全</span></td><td style='color:#dc2626;font-size:12px'>建议离场</td></tr>
+  </table></div>
+  
+<details class="fold" open>
+  <summary>⚠️ L4 退出预警</summary>
+  <div class="table-wrap"><table>
+    <tr><th>股票</th><th>信号</th><th>盈亏</th><th>状态</th></tr>
+    <tr><td>600118</td><td>初始止损</td><td>-1.53%</td><td><span class='tag tag-red'>已触发</span></td></tr><tr><td>000547</td><td>初始止损</td><td>+0.21%</td><td><span class='tag tag-red'>已触发</span></td></tr>
+  </table></div>
+</details>
+</div>
+<div class="card"><div class="card-title">📝 四、日内交易记录</div>
+<details class="fold" open>
+<summary>开仓 (5 笔)</summary>
+<div class="table-wrap"><table><tr><th>股票</th><th>价格</th><th>数量</th><th>成本</th></tr>
+<tr><td>600118</td><td>101.00</td><td>900</td><td>91014</td></tr><tr><td>688011</td><td>63.90</td><td>1500</td><td>95970</td></tr><tr><td>688523</td><td>57.95</td><td>1700</td><td>98638</td></tr><tr><td>003009</td><td>80.38</td><td>1200</td><td>96577</td></tr><tr><td>000547</td><td>33.01</td><td>3000</td><td>99154</td></tr>
+</table></div></details>
+</div>
+
+<div class="card">
+  <div class="card-title">📎 附录</div>
+
+  
+<details class="fold" open>
+<summary>打字机归因</summary>
+<div style="padding:8px 0;font-size:13px">
+  市场指纹: [71.7, 97.3, 43.3, 74.2]<br>
+  近邻: 30 笔 ｜ 平均 PnL: +5.01%
+</div>
+<div class="table-wrap"><table><tr><th>参数</th><th>归因值</th></tr><tr><td>bullish_threshold</td><td>65</td></tr><tr><td>position_size</td><td>0.08</td></tr><tr><td>soft_min_score</td><td>64</td></tr></table></div>
+</details>
+
+  <details class="fold">
+  <summary>当前参数配置</summary>
+  <div class="table-wrap"><table>
+    <tr><th>模块</th><th>参数</th><th>值</th></tr>
+    <tr><td>EXIT</td><td>stop_loss</td><td>-0.03</td></tr><tr><td>EXIT</td><td>trailing_stop</td><td>-0.05</td></tr><tr><td>EXIT</td><td>max_hold_days</td><td>43</td></tr><tr><td>EXIT</td><td>ma_break_below</td><td>20</td></tr><tr><td>RISK</td><td>position_size</td><td>0.07</td></tr><tr><td>RISK</td><td>max_positions</td><td>5</td></tr><tr><td>RISK</td><td>max_sector_exposure</td><td>0.4</td></tr><tr><td>RISK</td><td>target_exposure_ratio</td><td>0.5</td></tr><tr><td>RISK</td><td>portfolio_drawdown_limit</td><td>-0.05</td></tr><tr><td>RISK</td><td>active_reduction_l0</td><td>64.0</td></tr><tr><td>RISK</td><td>active_reduction_exposure</td><td>0.3</td></tr><tr><td>ENTRY</td><td>soft_min_score</td><td>79.0</td></tr><tr><td>ENTRY</td><td>soft_sector_top</td><td>3</td></tr><tr><td>ENTRY</td><td>hard_min_price</td><td>3.0</td></tr><tr><td>MARKET</td><td>bullish_threshold</td><td>70.0</td></tr><tr><td>MARKET</td><td>bearish_threshold</td><td>30.0</td></tr>
+  </table></div>
+  </details>
+
+  <details class="fold" open>
+  <summary>数据源状态</summary>
+  <div style="font-size:13px;padding:4px 0">L2 评分: 🟢 <code>precomputed</code> — D:\Projects\quant-system\outputs\precomputed\l2_factors\2026-01-05.parquet</div><div style="font-size:13px;padding:4px 0">预计算: 最新 2026-06-05, 2385 只, 滞后 1 天</div><div style="font-size:13px;padding:4px 0">覆盖差距: 🟢 4938 / 4938, 缺 0 只</div><div style="font-size:13px;padding:4px 0;font-weight:600">待更新信号:</div><div style="font-size:12px;padding:2px 0 2px 16px">🔴 行业对比 滞后 24 天</div><div style="font-size:12px;padding:2px 0 2px 16px">🔴 强势股 滞后 24 天</div>
+  <div style="font-size:12px;color:#6b7280;margin-top:8px">
+    运行 <code>python scripts/precompute_l2.py</code> 更新预计算因子 ｜
+    <code>signals/download_industry.py</code> 更新信号表
+  </div>
+  </details>
+</div>
+</div></body></html>

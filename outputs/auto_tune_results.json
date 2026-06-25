@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-05-02T19:32:22.455186",
+  "total": 1,
+  "results": [
+    {
+      "params": {
+        "macd_fast": 12,
+        "macd_slow": 26,
+        "macd_signal": 9,
+        "l1_bull": 1.0,
+        "l1_osc": 0.5,
+        "l1_cautious": 0.3,
+        "l1_bear": 0.0,
+        "l1_pass_min": 2,
+        "l2_top_k_ratio": 0.3,
+        "l2_min_top_k": 3,
+        "l2_w_trend": 30,
+        "l2_w_alpha": 25,
+        "l2_w_vol": 25,
+        "l2_w_fund": 20,
+        "fund_l1": 1.0,
+        "fund_l2": 0.85,
+        "fund_l3": 0.85,
+        "fund_l4": 0.8
+      },
+      "metrics": {
+        "total_return": -0.006447331985576232,
+        "annual_return": -0.000917881509305829,
+        "max_drawdown": 0.1393397359315096,
+        "sharpe_ratio": 0.02608592661096582,
+        "win_rate": 0.11380281690140845,
+        "score": -0.8944059409279812,
+        "benchmark_return": 0.6188753458032992,
+        "benchmark_drawdown": 0.45602619548225387,
+        "excess_return": -0.6253226777888754
+      }
+    }
+  ]
+}

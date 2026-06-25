@@ -1,4 +1,15 @@
-"""增量数据更新 — 每日收市后运行，自动补足缺失数据"""
+"""增量数据更新 — 每日收市后运行，自动补足缺失数据
+
+⚠️ DEPRECATED: 请使用 weekly_update.py（基于 LocalDataWarehouse SQLite）。
+此文件保留旧 parquet 缓存路径，仅供回退使用。
+"""
+
+import warnings
+warnings.warn(
+    "scripts/update_data.py 已弃用，请使用 scripts/weekly_update.py "
+    "(基于 LocalDataWarehouse SQLite，统一 sniper/ + backtest/ 数据口径)",
+    DeprecationWarning, stacklevel=2,
+)
 
 import sys
 from pathlib import Path
@@ -16,7 +27,7 @@ from backtest.data_loader import (
     fetch_index_daily,
 )
 from data.market_broad import resample_to_weekly, resample_to_monthly
-from backtest.runner import precompute_all_stocks
+# DEPRECATED: V2 backtest.runner 已注销。使用 backtest/l4_fractal_backtest.py
 from core.logger import get_logger
 
 logger = get_logger("scripts.update_data")
@@ -250,9 +261,11 @@ def update_l3_scores(today: str):
     for sym, df in stock_data.items():
         last_m = str(df.index[-1])[:7]
         if last_m in new_months:
-            from backtest.runner import _precompute_stock_monthly
-            rows = _precompute_stock_monthly(sym, df)
-            new_rows.extend(rows)
+            # DEPRECATED: V2 backtest.runner 已注销。使用 backtest/l4_fractal_backtest.py
+            # L4: _precompute_stock_monthly 已迁移至 l4_fractal_backtest.py
+            # from backtest.runner import _precompute_stock_monthly
+            # rows = _precompute_stock_monthly(sym, df)
+            new_rows.extend([])  # V2 注销占位
             time.sleep(0.001)
 
     if new_rows:

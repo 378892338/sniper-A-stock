@@ -149,7 +149,7 @@ class DataDownloader:
         if cached is not None:
             return cached
 
-        from gate.pre_filter import run_pre_filter
+        from data.pre_filter import run_pre_filter
         from data.sources import get_source
 
         ds = get_source()

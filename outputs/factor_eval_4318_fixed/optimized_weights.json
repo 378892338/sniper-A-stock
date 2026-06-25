@@ -1,0 +1,74 @@
+{
+  "metadata": {
+    "calibrated_at": "2026-05-10T07:52:28.882147",
+    "n_factors": 11,
+    "source": "factor_eval_4318_fixed"
+  },
+  "global": {
+    "trend_macd_5dim": 0.0,
+    "momentum_12_1": 0.0,
+    "reversal_20": 25.0,
+    "oversold_60": 0.0,
+    "weekly_deviation": 0.0,
+    "bottom_divergence": 25.0,
+    "volume_reversal": 0.0,
+    "bottom_fractal": 0.0,
+    "low_volatility": 25.0,
+    "turnover_stability": 25.0,
+    "close_position": 0.0
+  },
+  "states": {
+    "偏弱": {
+      "low_volatility": 25.0,
+      "turnover_stability": 25.0,
+      "reversal_20": 18.66,
+      "close_position": 16.25,
+      "bottom_divergence": 15.09,
+      "trend_macd_5dim": 0.0,
+      "momentum_12_1": 0.0,
+      "oversold_60": 0.0,
+      "weekly_deviation": 0.0,
+      "volume_reversal": 0.0,
+      "bottom_fractal": 0.0
+    },
+    "熊市": {
+      "reversal_20": 25.0,
+      "low_volatility": 25.0,
+      "bottom_divergence": 24.23,
+      "turnover_stability": 20.56,
+      "oversold_60": 5.21,
+      "trend_macd_5dim": 0.0,
+      "momentum_12_1": 0.0,
+      "weekly_deviation": 0.0,
+      "volume_reversal": 0.0,
+      "bottom_fractal": 0.0,
+      "close_position": 0.0
+    },
+    "牛市": {
+      "reversal_20": 25.0,
+      "turnover_stability": 25.0,
+      "close_position": 18.98,
+      "low_volatility": 15.32,
+      "trend_macd_5dim": 9.02,
+      "bottom_fractal": 6.68,
+      "momentum_12_1": 0.0,
+      "oversold_60": 0.0,
+      "weekly_deviation": 0.0,
+      "bottom_divergence": 0.0,
+      "volume_reversal": 0.0
+    },
+    "震荡": {
+      "reversal_20": 25.0,
+      "low_volatility": 25.0,
+      "trend_macd_5dim": 0.0,
+      "momentum_12_1": 0.0,
+      "oversold_60": 0.0,
+      "weekly_deviation": 0.0,
+      "bottom_divergence": 0.0,
+      "volume_reversal": 0.0,
+      "bottom_fractal": 0.0,
+      "turnover_stability": 0.0,
+      "close_position": 0.0
+    }
+  }
+}

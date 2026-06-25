@@ -4,6 +4,7 @@
 周线/月线由 DataStore 按统一规则 resample 生成。
 """
 
+import json
 import time
 from pathlib import Path
 
@@ -42,8 +43,11 @@ ETF_INDEX_CODES = {
 
 
 def fetch_index_daily(symbol: str, start: str = "2019-01-01",
-                      end: str = "2024-12-31") -> pd.DataFrame:
+                      end: str | None = None) -> pd.DataFrame:
     """获取指数日线 — 通过 DataSource 抽象"""
+    from datetime import datetime
+    if end is None:
+        end = datetime.now().strftime("%Y-%m-%d")
     from data.sources import get_source
     ds = get_source()
     try:
@@ -67,18 +71,25 @@ def fetch_index_daily(symbol: str, start: str = "2019-01-01",
 
 def fetch_all_index_data(
     start: str = "2019-01-01",
-    end: str = "2024-12-31",
-    sleep: float = 2.0,
+    end: str | None = None,
+    sleep: float | None = None,
 ) -> DataStore:
-    """获取所有指数日线数据，返回 DataStore（周线/月线由 DataStore 按需生成）"""
+    """获取所有指数日线数据，返回 DataStore"""
+    from datetime import datetime
+    if end is None:
+        end = datetime.now().strftime("%Y-%m-%d")
+    from shared.retry import human_delay
     store = DataStore()
     logger.info(f"开始获取指数数据: {start} ~ {end}")
 
     # 市场指数
     logger.info("--- 市场指数 ---")
     for name, code in MARKET_INDEX_CODES.items():
-        if sleep > 0 and store.names:
-            time.sleep(sleep)
+        if store.names:
+            if sleep is None:
+                human_delay(base_min=1.0, base_max=3.0)
+            elif sleep > 0:
+                time.sleep(sleep)
         daily = fetch_index_daily(code, start, end)
         if not daily.empty:
             store.add_daily(name, daily)
@@ -87,7 +98,9 @@ def fetch_all_index_data(
     # ETF分类指数
     logger.info("--- ETF分类指数 ---")
     for name, code in ETF_INDEX_CODES.items():
-        if sleep > 0:
+        if sleep is None:
+            human_delay(base_min=1.0, base_max=3.0)
+        elif sleep > 0:
             time.sleep(sleep)
         daily = fetch_index_daily(code, start, end)
         if not daily.empty:
@@ -121,17 +134,28 @@ def fetch_stock_pool(max_stocks: int = 100) -> list[str]:
 
 
 def fetch_stocks_daily(symbols: list[str], start: str = "2019-01-01",
-                       end: str = "2024-12-31", sleep: float = 2.5) -> dict[str, pd.DataFrame]:
-    """批量获取个股日线（使用 fetch_daily_tx 腾讯源）"""
+                       end: str | None = None, sleep: float | None = None) -> dict[str, pd.DataFrame]:
+    """批量获取个股日线（使用 fetch_daily_tx 腾讯源）
+
+    sleep: 默认 None 启用人性化随机延迟(0.8~2.5s)；
+           传 0 禁用延迟；传具体秒数则用固定延迟。
+    """
+    from datetime import datetime
+    if end is None:
+        end = datetime.now().strftime("%Y-%m-%d")
     from data.fetch import fetch_daily_tx
+    from shared.retry import human_delay
 
     result = {}
     success = 0
     failed = 0
 
     for i, sym in enumerate(symbols):
-        if sleep > 0 and i > 0:
-            time.sleep(sleep)
+        if i > 0:
+            if sleep is None:
+                human_delay()
+            elif sleep > 0:
+                time.sleep(sleep)
 
         try:
             df = fetch_daily_tx(sym, start, end)
@@ -150,13 +174,69 @@ def fetch_stocks_daily(symbols: list[str], start: str = "2019-01-01",
     return result
 
 
-def load_all_from_cache(cache_dir: str | Path, n_stocks: int = 0) -> DataStore:
+def load_all_from_cache(
+    cache_dir: str | Path,
+    n_stocks: int = 0,
+    auto_export: bool = True,
+    max_stale_days: int = 5,
+) -> DataStore:
     """从缓存 parquet 加载所有日线，返回 DataStore
+
+    若 auto_export=True 且本地仓库数据比缓存新，自动从 SQLite 导出。
 
     n_stocks=0 表示全部加载。
     周线/月线由 DataStore 按需从日线 resample 生成并缓存。
     """
+    from data.local.warehouse import LocalDataWarehouse
+
+    need_export = False
+    cache_dir = Path(cache_dir)
+
+    if auto_export:
+        try:
+            warehouse = LocalDataWarehouse()
+            # 检查仓库是否有数据
+            stats = warehouse.table_stats()
+            n_daily = stats.get("daily_bars", 0)
+
+            if n_daily > 0 and not _cache_has_data(cache_dir):
+                logger.info("缓存为空但仓库有数据，自动导出")
+                need_export = True
+            elif n_daily > 0:
+                # 检查仓库是否比缓存新
+                last_update = warehouse.get_last_update("daily_bars")
+                snapshot_meta = cache_dir / "snapshot.json"
+                if last_update and snapshot_meta.exists():
+                    try:
+                        with open(snapshot_meta) as f:
+                            meta = json.load(f)
+                        cache_time = meta.get("exported_at", "")
+                        if cache_time < last_update:
+                            logger.info("仓库数据更新于缓存，重新导出")
+                            need_export = True
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug(f"自动导出检查跳过: {e}")
+
+    if need_export:
+        from data.pipeline import export_backtest_snapshot
+        export_backtest_snapshot(
+            warehouse,
+            cache_dir,
+            start="2000-01-01",
+        )
+
     return DataStore.from_parquet_cache(cache_dir, n_stocks=n_stocks)
+
+
+def _cache_has_data(cache_dir: Path) -> bool:
+    """检查缓存目录是否有有效的回测数据。"""
+    stocks = list(cache_dir.glob("stock_*_daily.parquet"))
+    indices = list(cache_dir.glob("market_daily_*.parquet"))
+    etf = list(cache_dir.glob("etf_daily_*.parquet"))
+    sw = list(cache_dir.glob("sw_index_daily.parquet"))
+    return len(stocks) > 0 or len(indices) > 0 or len(etf) > 0 or len(sw) > 0
 
 
 def get_benchmark(store: DataStore) -> pd.Series | None:
@@ -175,7 +255,7 @@ def main():
     parser.add_argument("--stocks", type=int, default=100, help="个股数量")
     parser.add_argument("--sleep", type=float, default=2.5, help="请求间隔(秒)")
     parser.add_argument("--start", default="2019-01-01")
-    parser.add_argument("--end", default="2024-12-31")
+    parser.add_argument("--end", default=None)
     args = parser.parse_args()
 
     cache_dir = Path("data/raw/_cache/backtest")

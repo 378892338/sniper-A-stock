@@ -52,34 +52,52 @@ class TestDataDownloader:
         assert not monthly.empty
 
 
-class TestSchedulerPreFilterIntegration:
-    """Scheduler pre_filter 集成测试"""
+class TestPipelineIntegration:
+    """数据管道集成测试 — 验证新 pipeline + pre_filter 组件"""
 
-    def test_scheduler_has_downloader(self):
-        from engine.state_machine import StateMachine, SystemState
-        from engine.scheduler import Scheduler
-        sm = StateMachine()
-        s = Scheduler(sm)
-        assert s._downloader is None  # 延迟初始化
-        dl = s.downloader             # 触发初始化
-        assert dl is not None
+    def test_pipeline_imports(self):
+        """验证新 pipeline 组件能正确导入"""
+        from data.pre_filter import filter_st_stocks, filter_new_stocks, run_pre_filter
+        from data.pipeline import download_and_update, prepare_backtest, export_backtest_snapshot
+        assert filter_st_stocks is not None
+        assert filter_new_stocks is not None
+        assert run_pre_filter is not None
+        assert download_and_update is not None
+        assert prepare_backtest is not None
+        assert export_backtest_snapshot is not None
 
-    def test_run_pre_filter_returns_dataframe(self):
-        from engine.state_machine import StateMachine, SystemState
-        from engine.scheduler import Scheduler
-        sm = StateMachine()
-        s = Scheduler(sm)
-        result = s._run_pre_filter()
-        # 离线环境可能返回空 DataFrame，但不应该抛异常
+    def test_pre_filter_returns_dataframe_with_empty_input(self):
+        """pre_filter 接收空 DataFrame 应返回空 DataFrame 而非抛异常"""
+        from data.pre_filter import run_pre_filter
+        import pandas as pd
+
+        result = run_pre_filter(pd.DataFrame())
         assert isinstance(result, pd.DataFrame)
 
-    def test_run_weekly_cycle_includes_pre_filter(self):
-        """验证 run_weekly_cycle 执行了前置过滤（通过 logger 不崩溃确认）"""
-        from engine.state_machine import StateMachine, SystemState
-        from engine.scheduler import Scheduler
-        sm = StateMachine()
-        s = Scheduler(sm)
-        # 不传数据时不应崩溃
-        result = s.run_weekly_cycle()
-        assert "state" in result
-        assert result["state"] is not None
+    def test_pre_filter_handles_missing_columns(self):
+        """pre_filter 缺少必要列时应返回原始 DataFrame"""
+        from data.pre_filter import run_pre_filter
+        import pandas as pd
+
+        df = pd.DataFrame({"symbol": ["000001"]})  # 缺少 name / ipo_date
+        result = run_pre_filter(df)
+        assert len(result) == 1  # 缺少列不报错
+
+    def test_sniper_data_router_imports(self):
+        """验证 sniper/ 核心组件能正确导入"""
+        from sniper.data_router import DataRouter
+        from sniper.layers.l0_market import MarketScorer
+        from sniper.layers.l1_sector import SectorScorer
+        from sniper.layers.l2_stock import StockScorer
+        from sniper.layers.l3_entry import EntryFilter
+        from sniper.layers.l4_exit import ExitChain
+        from sniper.engine.backtest import BacktestEngine
+        from sniper.engine.risk import RiskManager
+        assert DataRouter is not None
+        assert MarketScorer is not None
+        assert SectorScorer is not None
+        assert StockScorer is not None
+        assert EntryFilter is not None
+        assert ExitChain is not None
+        assert BacktestEngine is not None
+        assert RiskManager is not None

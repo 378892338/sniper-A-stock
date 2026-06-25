@@ -3,15 +3,32 @@
 import os
 from pathlib import Path
 
+# 加载 .env 文件（无需 python-dotenv）
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    with open(_env_file, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                _k, _v = _k.strip(), _v.strip().strip("\"'").strip()
+                if _k and _v:
+                    os.environ.setdefault(_k, _v)
+
 # ============ 数据源配置 ============
-# "akshare" | "tushare" | "auto" — auto 按 DATA_SOURCE_PREFERENCE 顺序选第一个可用的
+# "akshare" | "akshare_daily" | "tushare" | "auto" — auto 按 DATA_SOURCE_PREFERENCE 顺序选第一个可用的
 DATA_SOURCE = "auto"
-DATA_SOURCE_PREFERENCE = ["eastmoney", "sina", "akshare", "tushare", "baostock"]
+DATA_SOURCE_PREFERENCE = ["jqdata", "akshare_daily", "akshare", "10jqka", "sina", "tushare", "baostock", "eastmoney"]
 TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
+
+# JQData（聚宽）配置
+JQDATA_USERNAME = os.getenv("JQDATA_USERNAME", "")
+JQDATA_PASSWORD = os.getenv("JQDATA_PASSWORD", "")
 
 # 路径
 ROOT = Path(__file__).parent.parent
 DATA_DIR = ROOT / "data" / "raw"
+SW2_BACKUP_PATH = DATA_DIR / "sw2_members_backup.parquet"
 QLIB_DIR = ROOT / "data" / "qlib_data"
 OUTPUT_DIR = ROOT / "outputs"
 MODEL_DIR = OUTPUT_DIR / "models"
@@ -140,11 +157,6 @@ SECTOR_INTEGRATION = {
     # 缠论中枢检测扩展
     "enable_chanlun_l1": True,
     "enable_chanlun_l2": True,
-
-    # 独立强势股例外
-    "independent_stock_slots": 1,
-    "independent_stock_score_threshold": 75,
-    "independent_stock_chan_score": 25,
 
     # L1 联动阈值: 市场状态 → L2 Gate 最少条件数
     "gate_l1_link_thresholds": {

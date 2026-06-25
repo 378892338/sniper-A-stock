@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-06-05T02:40:56.981739",
+  "metrics": {
+    "total_return": 0.5635,
+    "annual_return": 0.0646,
+    "daily_vol": 0.0046,
+    "annual_vol": 0.0738,
+    "sharpe": 0.604,
+    "max_drawdown": 0.1124,
+    "calmar": 0.575,
+    "win_rate": 0.3729,
+    "total_trades": 1585.0,
+    "avg_pnl": 343.63,
+    "avg_win": 4718.74,
+    "avg_loss": -2257.66,
+    "profit_factor": 1.243,
+    "final_capital": 1563509.48
+  },
+  "n_trades": 1585
+}

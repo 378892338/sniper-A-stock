@@ -145,7 +145,7 @@ class TestCalendar:
 
 class TestPreFilter:
     def test_filter_st_stocks(self):
-        from gate.pre_filter import filter_st_stocks
+        from data.pre_filter import filter_st_stocks
         import pandas as pd
         df = pd.DataFrame({
             "symbol": ["000001", "000002", "000003", "000004"],
@@ -158,7 +158,7 @@ class TestPreFilter:
         assert "*ST华泽" not in result["name"].values
 
     def test_filter_new_stocks(self):
-        from gate.pre_filter import filter_new_stocks
+        from data.pre_filter import filter_new_stocks
         import pandas as pd
         from datetime import datetime, timedelta
         df = pd.DataFrame({
@@ -173,7 +173,7 @@ class TestPreFilter:
         assert result.iloc[0]["symbol"] == "000001"
 
     def test_run_pre_filter_integration(self):
-        from gate.pre_filter import run_pre_filter
+        from data.pre_filter import run_pre_filter
         import pandas as pd
         from datetime import datetime, timedelta
         df = pd.DataFrame({

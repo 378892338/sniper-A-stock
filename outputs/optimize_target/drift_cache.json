@@ -1,0 +1,23 @@
+{
+  "profit_target": [
+    "down"
+  ],
+  "stop_loss": [
+    "up"
+  ],
+  "soft_min_score": [
+    "down"
+  ],
+  "bullish_threshold": [
+    "down"
+  ],
+  "trailing_stop": [
+    "down"
+  ],
+  "max_hold_days": [
+    "down"
+  ],
+  "position_size": [
+    "up"
+  ]
+}

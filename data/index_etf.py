@@ -6,12 +6,87 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 
 from data.sources import get_source
-from gate.sector_mapper import ETF_INDEX_MAP
 from shared.cache import read_cache, write_cache
 from shared.retry import retry
 from core.logger import get_logger
 
 logger = get_logger("data.index_etf")
+
+# ETF 分类指数体系
+ETF_INDEX_MAP = {
+    "证券":     {"code": "399975", "etf_name": "证券ETF"},
+    "银行":     {"code": "399986", "etf_name": "银行ETF"},
+    "军工":     {"code": "399967", "etf_name": "军工ETF"},
+    "芯片":     {"code": "990001", "etf_name": "芯片ETF"},
+    "半导体":   {"code": "399678", "etf_name": "半导体ETF"},
+    "新能源车": {"code": "399976", "etf_name": "新能源车ETF"},
+    "光伏":     {"code": "399395", "etf_name": "光伏ETF"},
+    "消费":     {"code": "000932", "etf_name": "消费ETF"},
+    "医药":     {"code": "000933", "etf_name": "医药ETF"},
+    "酒":       {"code": "399997", "etf_name": "酒ETF"},
+    "科技":     {"code": "399440", "etf_name": "科技ETF"},
+    "有色":     {"code": "000819", "etf_name": "有色ETF"},
+    "煤炭":     {"code": "399998", "etf_name": "煤炭ETF"},
+    "汽车":     {"code": "399432", "etf_name": "汽车ETF"},
+}
+
+# 申万行业 → ETF 硬映射
+INDUSTRY_TO_ETF = {
+    "医药生物":   ["医药"],
+    "银行":       ["银行"],
+    "食品饮料":   ["消费", "酒"],
+    "电子":       ["芯片"],
+    "计算机":     ["科技"],
+    "国防军工":   ["军工"],
+    "汽车":       ["汽车", "新能源车"],
+    "非银金融":   ["证券"],
+    "有色金属":   ["有色"],
+    "煤炭":       ["煤炭"],
+    "电力设备":   ["光伏", "新能源车"],
+    "家用电器":   ["消费"],
+    "农林牧渔":   ["消费"],
+    "纺织服饰":   ["消费"],
+    "轻工制造":   ["消费"],
+    "商贸零售":   ["消费"],
+    "社会服务":   ["消费"],
+    "传媒":       ["科技"],
+    "通信":       ["科技"],
+    "机械设备":   ["新能源车"],
+    "基础化工":   ["新能源车"],
+    "钢铁":       ["有色"],
+    "石油石化":   ["煤炭"],
+    "公用事业":   ["新能源车"],
+    "建筑装饰":   ["证券"],
+    "房地产":     ["证券"],
+}
+
+# 概念板块 → ETF 概念补映射
+CONCEPT_TO_ETF = {
+    "光刻胶":    ["半导体"],
+    "CRO":       ["医药"],
+    "HJT电池":   ["光伏"],
+    "TOPCon":    ["光伏"],
+    "固态电池":  ["新能源车"],
+    "钠电池":    ["新能源车"],
+    "数据要素":  ["科技"],
+    "信创":      ["科技"],
+    "ChatGPT":   ["科技"],
+    "AIGC":      ["科技"],
+    "CPO":       ["芯片"],
+    "先进封装":  ["半导体"],
+    "存储芯片":  ["芯片"],
+    "无人驾驶":  ["汽车"],
+    "一体化压铸": ["汽车"],
+    "白酒":      ["酒"],
+    "医美":      ["医药"],
+    "创新药":    ["医药"],
+    "中药":      ["医药"],
+    "稀土永磁":  ["有色"],
+    "锂矿":      ["有色"],
+    "光伏建筑一体化": ["光伏"],
+    "虚拟电厂":  ["新能源车"],
+    "充电桩":    ["新能源车"],
+}
 
 
 def fetch_etf_index_data(etf_name: str, start: str, end: str,
@@ -71,7 +146,6 @@ def fetch_all_etf_indices(start: str, end: str, etf_names: list[str] = None,
 
 def get_etf_stocks(etf_name: str, source: str = "akshare") -> list[str]:
     """获取ETF分类指数对应的成分股列表"""
-    from gate.sector_mapper import INDUSTRY_TO_ETF, CONCEPT_TO_ETF
     from data.industry import fetch_industry_members, fetch_concept_members
 
     etf_industries = [ind for ind, etfs in INDUSTRY_TO_ETF.items() if etf_name in etfs]

@@ -1,0 +1,272 @@
+[
+  {
+    "stop_loss": -0.15,
+    "trailing_stop": -0.03,
+    "profit_target": 0.05,
+    "max_hold_days": 45,
+    "position_size": 0.12,
+    "soft_min_score": 76,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.05,
+    "trailing_stop": -0.08,
+    "profit_target": 0.19,
+    "max_hold_days": 30,
+    "position_size": 0.25,
+    "soft_min_score": 60,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.14,
+    "trailing_stop": -0.08,
+    "profit_target": 0.16,
+    "max_hold_days": 40,
+    "position_size": 0.1,
+    "soft_min_score": 68,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.05,
+    "trailing_stop": -0.06,
+    "profit_target": 0.07,
+    "max_hold_days": 10,
+    "position_size": 0.2,
+    "soft_min_score": 52,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.19,
+    "trailing_stop": -0.07,
+    "profit_target": 0.15,
+    "max_hold_days": 40,
+    "position_size": 0.13,
+    "soft_min_score": 70,
+    "bullish_threshold": 60
+  },
+  {
+    "stop_loss": -0.09,
+    "trailing_stop": -0.09,
+    "profit_target": 0.08,
+    "max_hold_days": 45,
+    "position_size": 0.06,
+    "soft_min_score": 78,
+    "bullish_threshold": 45
+  },
+  {
+    "stop_loss": -0.19,
+    "trailing_stop": -0.08,
+    "profit_target": 0.22,
+    "max_hold_days": 35,
+    "position_size": 0.23,
+    "soft_min_score": 68,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.18,
+    "trailing_stop": -0.04,
+    "profit_target": 0.07,
+    "max_hold_days": 35,
+    "position_size": 0.08,
+    "soft_min_score": 50,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.1,
+    "trailing_stop": -0.1,
+    "profit_target": 0.18,
+    "max_hold_days": 45,
+    "position_size": 0.09,
+    "soft_min_score": 76,
+    "bullish_threshold": 50
+  },
+  {
+    "stop_loss": -0.06,
+    "trailing_stop": -0.09,
+    "profit_target": 0.13,
+    "max_hold_days": 45,
+    "position_size": 0.15,
+    "soft_min_score": 60,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.02,
+    "trailing_stop": -0.09,
+    "profit_target": 0.05,
+    "max_hold_days": 15,
+    "position_size": 0.05,
+    "soft_min_score": 58,
+    "bullish_threshold": 70
+  },
+  {
+    "stop_loss": -0.11,
+    "trailing_stop": -0.05,
+    "profit_target": 0.13,
+    "max_hold_days": 45,
+    "position_size": 0.08,
+    "soft_min_score": 50,
+    "bullish_threshold": 70
+  },
+  {
+    "stop_loss": -0.03,
+    "trailing_stop": -0.08,
+    "profit_target": 0.12,
+    "max_hold_days": 60,
+    "position_size": 0.08,
+    "soft_min_score": 68,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.1,
+    "trailing_stop": -0.06,
+    "profit_target": 0.23,
+    "max_hold_days": 40,
+    "position_size": 0.22,
+    "soft_min_score": 54,
+    "bullish_threshold": 50
+  },
+  {
+    "stop_loss": -0.17,
+    "trailing_stop": -0.04,
+    "profit_target": 0.24,
+    "max_hold_days": 60,
+    "position_size": 0.24,
+    "soft_min_score": 52,
+    "bullish_threshold": 50
+  },
+  {
+    "stop_loss": -0.11,
+    "trailing_stop": -0.03,
+    "profit_target": 0.1,
+    "max_hold_days": 20,
+    "position_size": 0.06,
+    "soft_min_score": 74,
+    "bullish_threshold": 60
+  },
+  {
+    "stop_loss": -0.03,
+    "trailing_stop": -0.05,
+    "profit_target": 0.18,
+    "max_hold_days": 55,
+    "position_size": 0.05,
+    "soft_min_score": 80,
+    "bullish_threshold": 50
+  },
+  {
+    "stop_loss": -0.17,
+    "trailing_stop": -0.08,
+    "profit_target": 0.16,
+    "max_hold_days": 20,
+    "position_size": 0.15,
+    "soft_min_score": 78,
+    "bullish_threshold": 60
+  },
+  {
+    "stop_loss": -0.07,
+    "trailing_stop": -0.09,
+    "profit_target": 0.1,
+    "max_hold_days": 5,
+    "position_size": 0.24,
+    "soft_min_score": 50,
+    "bullish_threshold": 50
+  },
+  {
+    "stop_loss": -0.12,
+    "trailing_stop": -0.02,
+    "profit_target": 0.21,
+    "max_hold_days": 45,
+    "position_size": 0.1,
+    "soft_min_score": 62,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.02,
+    "trailing_stop": -0.09,
+    "profit_target": 0.22,
+    "max_hold_days": 35,
+    "position_size": 0.1,
+    "soft_min_score": 78,
+    "bullish_threshold": 60
+  },
+  {
+    "stop_loss": -0.18,
+    "trailing_stop": -0.07,
+    "profit_target": 0.1,
+    "max_hold_days": 15,
+    "position_size": 0.13,
+    "soft_min_score": 74,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.15,
+    "trailing_stop": -0.07,
+    "profit_target": 0.21,
+    "max_hold_days": 10,
+    "position_size": 0.19,
+    "soft_min_score": 68,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.16,
+    "trailing_stop": -0.09,
+    "profit_target": 0.12,
+    "max_hold_days": 20,
+    "position_size": 0.16,
+    "soft_min_score": 50,
+    "bullish_threshold": 65
+  },
+  {
+    "stop_loss": -0.08,
+    "trailing_stop": -0.09,
+    "profit_target": 0.22,
+    "max_hold_days": 15,
+    "position_size": 0.17,
+    "soft_min_score": 48,
+    "bullish_threshold": 60
+  },
+  {
+    "stop_loss": -0.03,
+    "trailing_stop": -0.09,
+    "profit_target": 0.2,
+    "max_hold_days": 40,
+    "position_size": 0.18,
+    "soft_min_score": 62,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.14,
+    "trailing_stop": -0.07,
+    "profit_target": 0.1,
+    "max_hold_days": 40,
+    "position_size": 0.12,
+    "soft_min_score": 56,
+    "bullish_threshold": 60
+  },
+  {
+    "stop_loss": -0.12,
+    "trailing_stop": -0.06,
+    "profit_target": 0.15,
+    "max_hold_days": 25,
+    "position_size": 0.15,
+    "soft_min_score": 78,
+    "bullish_threshold": 55
+  },
+  {
+    "stop_loss": -0.18,
+    "trailing_stop": -0.06,
+    "profit_target": 0.18,
+    "max_hold_days": 20,
+    "position_size": 0.18,
+    "soft_min_score": 56,
+    "bullish_threshold": 50
+  },
+  {
+    "stop_loss": -0.15,
+    "trailing_stop": -0.1,
+    "profit_target": 0.19,
+    "max_hold_days": 15,
+    "position_size": 0.2,
+    "soft_min_score": 64,
+    "bullish_threshold": 70
+  }
+]

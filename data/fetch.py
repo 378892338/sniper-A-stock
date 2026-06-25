@@ -72,7 +72,7 @@ def fetch_daily(symbol: str, start: str, end: str, adjust: str = "") -> pd.DataF
 
 
 def fetch_daily_tx(symbol: str, start: str, end: str) -> pd.DataFrame:
-    """获取单只股票日线（腾讯源，兼容创业板科创板 20cm）"""
+    """获取单只股票日线（优先腾讯源，volume 缺失时退化为 EM 源）"""
     code = f"sz{symbol}" if symbol.startswith(("0", "3")) else f"sh{symbol}"
     try:
         df = ak.stock_zh_a_hist_tx(
@@ -86,8 +86,17 @@ def fetch_daily_tx(symbol: str, start: str, end: str) -> pd.DataFrame:
         })
         if "volume" not in df.columns:
             df["volume"] = np.nan
+        else:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
         df["date"] = pd.to_datetime(df["date"])
         df["symbol"] = symbol
+        # TX 端点 volume 全 NaN(含空字符串被 to_numeric 转为 NaN) → 降级到 EM 端点
+        if df["volume"].isna().all():
+            logger.debug(f"fetch_daily_tx({symbol}) volume 缺失，降级到 EM 源")
+            em = fetch_daily(symbol, start, end)
+            if not em.empty and "volume" in em.columns and em["volume"].notna().any():
+                common_dates = df.index.intersection(em.index)
+                df.loc[common_dates, "volume"] = em.loc[common_dates, "volume"]
         return df.set_index("date")
     except Exception as e:
         logger.debug(f"fetch_daily_tx({symbol}) 失败: {e}")

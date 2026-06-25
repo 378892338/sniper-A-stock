@@ -1,0 +1,658 @@
+[
+  {
+    "date": "2019-11-29",
+    "symbol": "000001",
+    "entry_price": 16.26,
+    "exit_price": 15.29,
+    "loss_pct": -5.97,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-01-23",
+    "symbol": "000017",
+    "entry_price": 4.31,
+    "exit_price": 4.0,
+    "loss_pct": -7.19,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-01-23",
+    "symbol": "000001",
+    "entry_price": 16.45,
+    "exit_price": 15.54,
+    "loss_pct": -5.53,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-03-02",
+    "symbol": "000014",
+    "entry_price": 8.9,
+    "exit_price": 8.43,
+    "loss_pct": -5.28,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-03-02",
+    "symbol": "000011",
+    "entry_price": 9.06,
+    "exit_price": 7.85,
+    "loss_pct": -13.36,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-03-02",
+    "symbol": "000006",
+    "entry_price": 5.23,
+    "exit_price": 4.82,
+    "loss_pct": -7.84,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-03-12",
+    "symbol": "000007",
+    "entry_price": 8.95,
+    "exit_price": 8.5,
+    "loss_pct": -5.03,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-03-23",
+    "symbol": "000002",
+    "entry_price": 26.53,
+    "exit_price": 24.55,
+    "loss_pct": -7.46,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-03-23",
+    "symbol": "000008",
+    "entry_price": 3.43,
+    "exit_price": 3.08,
+    "loss_pct": -10.2,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-05-06",
+    "symbol": "000017",
+    "entry_price": 3.18,
+    "exit_price": 3.02,
+    "loss_pct": -5.03,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-05-15",
+    "symbol": "000001",
+    "entry_price": 13.93,
+    "exit_price": 13.23,
+    "loss_pct": -5.03,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-05-20",
+    "symbol": "000011",
+    "entry_price": 9.07,
+    "exit_price": 8.54,
+    "loss_pct": -5.84,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-05-21",
+    "symbol": "000008",
+    "entry_price": 3.18,
+    "exit_price": 3.0,
+    "loss_pct": -5.66,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-05-22",
+    "symbol": "000006",
+    "entry_price": 4.99,
+    "exit_price": 4.68,
+    "loss_pct": -6.21,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-05-22",
+    "symbol": "000002",
+    "entry_price": 26.8,
+    "exit_price": 25.16,
+    "loss_pct": -6.12,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-08-26",
+    "symbol": "000006",
+    "entry_price": 6.81,
+    "exit_price": 6.45,
+    "loss_pct": -5.29,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-10-21",
+    "symbol": "000006",
+    "entry_price": 6.43,
+    "exit_price": 6.1,
+    "loss_pct": -5.13,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-10-27",
+    "symbol": "000011",
+    "entry_price": 16.0,
+    "exit_price": 15.04,
+    "loss_pct": -6.0,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-10-29",
+    "symbol": "000008",
+    "entry_price": 2.94,
+    "exit_price": 2.79,
+    "loss_pct": -5.1,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-12-08",
+    "symbol": "000011",
+    "entry_price": 13.82,
+    "exit_price": 13.1,
+    "loss_pct": -5.21,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-12-11",
+    "symbol": "000006",
+    "entry_price": 5.73,
+    "exit_price": 5.32,
+    "loss_pct": -7.16,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-12-24",
+    "symbol": "000008",
+    "entry_price": 2.72,
+    "exit_price": 2.56,
+    "loss_pct": -5.88,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2020-12-31",
+    "symbol": "000007",
+    "entry_price": 7.96,
+    "exit_price": 6.97,
+    "loss_pct": -12.44,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-01-07",
+    "symbol": "000014",
+    "entry_price": 8.29,
+    "exit_price": 7.8,
+    "loss_pct": -5.91,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-01-13",
+    "symbol": "000017",
+    "entry_price": 2.3,
+    "exit_price": 2.12,
+    "loss_pct": -7.83,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-02-01",
+    "symbol": "000008",
+    "entry_price": 2.48,
+    "exit_price": 2.34,
+    "loss_pct": -5.65,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-06-15",
+    "symbol": "000002",
+    "entry_price": 26.14,
+    "exit_price": 24.76,
+    "loss_pct": -5.28,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-07-08",
+    "symbol": "000008",
+    "entry_price": 2.29,
+    "exit_price": 2.16,
+    "loss_pct": -5.68,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-07-09",
+    "symbol": "000014",
+    "entry_price": 8.0,
+    "exit_price": 7.59,
+    "loss_pct": -5.13,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-07-26",
+    "symbol": "000006",
+    "entry_price": 4.86,
+    "exit_price": 4.56,
+    "loss_pct": -6.17,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-08-30",
+    "symbol": "000002",
+    "entry_price": 20.66,
+    "exit_price": 19.43,
+    "loss_pct": -5.95,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-10-20",
+    "symbol": "000002",
+    "entry_price": 21.31,
+    "exit_price": 20.0,
+    "loss_pct": -6.15,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-10-25",
+    "symbol": "000006",
+    "entry_price": 4.53,
+    "exit_price": 4.27,
+    "loss_pct": -5.74,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2021-11-04",
+    "symbol": "000008",
+    "entry_price": 2.23,
+    "exit_price": 2.11,
+    "loss_pct": -5.38,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-01-11",
+    "symbol": "000008",
+    "entry_price": 2.94,
+    "exit_price": 2.76,
+    "loss_pct": -6.12,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-03-09",
+    "symbol": "000002",
+    "entry_price": 18.26,
+    "exit_price": 16.98,
+    "loss_pct": -7.01,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-03-15",
+    "symbol": "000011",
+    "entry_price": 10.22,
+    "exit_price": 9.51,
+    "loss_pct": -6.95,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-04-19",
+    "symbol": "000008",
+    "entry_price": 2.54,
+    "exit_price": 2.41,
+    "loss_pct": -5.12,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-05-06",
+    "symbol": "000011",
+    "entry_price": 11.97,
+    "exit_price": 11.28,
+    "loss_pct": -5.76,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-05-12",
+    "symbol": "000002",
+    "entry_price": 19.38,
+    "exit_price": 17.98,
+    "loss_pct": -7.22,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-06-01",
+    "symbol": "000008",
+    "entry_price": 2.82,
+    "exit_price": 2.67,
+    "loss_pct": -5.32,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-07-06",
+    "symbol": "000011",
+    "entry_price": 13.51,
+    "exit_price": 12.8,
+    "loss_pct": -5.26,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-07-06",
+    "symbol": "000002",
+    "entry_price": 20.5,
+    "exit_price": 19.47,
+    "loss_pct": -5.02,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-08-03",
+    "symbol": "000008",
+    "entry_price": 2.52,
+    "exit_price": 2.34,
+    "loss_pct": -7.14,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-08-03",
+    "symbol": "000001",
+    "entry_price": 12.8,
+    "exit_price": 12.03,
+    "loss_pct": -6.02,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-09-26",
+    "symbol": "000011",
+    "entry_price": 10.03,
+    "exit_price": 9.5,
+    "loss_pct": -5.28,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-10-20",
+    "symbol": "000001",
+    "entry_price": 11.84,
+    "exit_price": 11.2,
+    "loss_pct": -5.41,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-10-24",
+    "symbol": "000002",
+    "entry_price": 16.63,
+    "exit_price": 15.56,
+    "loss_pct": -6.43,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-10-28",
+    "symbol": "000006",
+    "entry_price": 4.1,
+    "exit_price": 3.78,
+    "loss_pct": -7.8,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2022-12-07",
+    "symbol": "000006",
+    "entry_price": 5.84,
+    "exit_price": 5.31,
+    "loss_pct": -9.08,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-02-06",
+    "symbol": "000002",
+    "entry_price": 18.65,
+    "exit_price": 17.28,
+    "loss_pct": -7.35,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-02-16",
+    "symbol": "000006",
+    "entry_price": 5.64,
+    "exit_price": 5.34,
+    "loss_pct": -5.32,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-04-21",
+    "symbol": "000006",
+    "entry_price": 5.08,
+    "exit_price": 4.79,
+    "loss_pct": -5.71,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-04-24",
+    "symbol": "000001",
+    "entry_price": 13.03,
+    "exit_price": 12.1,
+    "loss_pct": -7.14,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-05-24",
+    "symbol": "000002",
+    "entry_price": 15.24,
+    "exit_price": 14.11,
+    "loss_pct": -7.41,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-06-21",
+    "symbol": "000006",
+    "entry_price": 4.62,
+    "exit_price": 4.38,
+    "loss_pct": -5.19,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-09-05",
+    "symbol": "000006",
+    "entry_price": 5.11,
+    "exit_price": 4.72,
+    "loss_pct": -7.63,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-09-18",
+    "symbol": "000002",
+    "entry_price": 14.02,
+    "exit_price": 13.31,
+    "loss_pct": -5.06,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-11-01",
+    "symbol": "000001",
+    "entry_price": 11.6,
+    "exit_price": 10.48,
+    "loss_pct": -9.66,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-12-05",
+    "symbol": "000002",
+    "entry_price": 11.44,
+    "exit_price": 10.79,
+    "loss_pct": -5.68,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-12-25",
+    "symbol": "000011",
+    "entry_price": 9.2,
+    "exit_price": 8.72,
+    "loss_pct": -5.22,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2023-12-26",
+    "symbol": "000006",
+    "entry_price": 4.63,
+    "exit_price": 4.36,
+    "loss_pct": -5.83,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-02-01",
+    "symbol": "000008",
+    "entry_price": 2.2,
+    "exit_price": 2.09,
+    "loss_pct": -5.0,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-02-01",
+    "symbol": "000006",
+    "entry_price": 4.17,
+    "exit_price": 3.93,
+    "loss_pct": -5.76,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-02-05",
+    "symbol": "000011",
+    "entry_price": 8.6,
+    "exit_price": 7.74,
+    "loss_pct": -10.0,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-03-29",
+    "symbol": "000002",
+    "entry_price": 9.6,
+    "exit_price": 9.0,
+    "loss_pct": -6.25,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-04-12",
+    "symbol": "000006",
+    "entry_price": 3.95,
+    "exit_price": 3.68,
+    "loss_pct": -6.84,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-04-15",
+    "symbol": "000008",
+    "entry_price": 2.48,
+    "exit_price": 2.34,
+    "loss_pct": -5.65,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-06-05",
+    "symbol": "000006",
+    "entry_price": 3.81,
+    "exit_price": 3.56,
+    "loss_pct": -6.56,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-06-06",
+    "symbol": "000008",
+    "entry_price": 2.12,
+    "exit_price": 1.98,
+    "loss_pct": -6.6,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-06-17",
+    "symbol": "000011",
+    "entry_price": 8.24,
+    "exit_price": 7.79,
+    "loss_pct": -5.46,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-06-24",
+    "symbol": "000002",
+    "entry_price": 7.41,
+    "exit_price": 6.99,
+    "loss_pct": -5.67,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-08-20",
+    "symbol": "000002",
+    "entry_price": 7.09,
+    "exit_price": 6.67,
+    "loss_pct": -5.92,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-08-22",
+    "symbol": "000008",
+    "entry_price": 2.13,
+    "exit_price": 2.0,
+    "loss_pct": -6.1,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-10-09",
+    "symbol": "000008",
+    "entry_price": 2.41,
+    "exit_price": 2.28,
+    "loss_pct": -5.39,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-10-10",
+    "symbol": "000002",
+    "entry_price": 9.72,
+    "exit_price": 9.12,
+    "loss_pct": -6.17,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2024-12-17",
+    "symbol": "000002",
+    "entry_price": 8.6,
+    "exit_price": 8.14,
+    "loss_pct": -5.35,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2025-03-13",
+    "symbol": "000002",
+    "entry_price": 7.75,
+    "exit_price": 7.35,
+    "loss_pct": -5.16,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2025-06-13",
+    "symbol": "000002",
+    "entry_price": 6.81,
+    "exit_price": 6.44,
+    "loss_pct": -5.43,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2025-11-19",
+    "symbol": "000002",
+    "entry_price": 6.44,
+    "exit_price": 6.06,
+    "loss_pct": -5.9,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2026-03-20",
+    "symbol": "000002",
+    "entry_price": 4.65,
+    "exit_price": 4.34,
+    "loss_pct": -6.67,
+    "reason": "严格止损: -5%"
+  },
+  {
+    "date": "2026-04-28",
+    "symbol": "000012",
+    "entry_price": 4.33,
+    "exit_price": 4.03,
+    "loss_pct": -6.93,
+    "reason": "严格止损: -5%"
+  }
+]
