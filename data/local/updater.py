@@ -248,105 +248,146 @@ def _fetch_failed_with_fetcher(
     symbols: list[str], start: str, end: str, warehouse: LocalDataWarehouse,
     skip_validation: bool = False,
     stock_starts: dict[str, str] | None = None,
+    run_id: str | None = None,
 ) -> tuple[int, dict[str, bool]]:
-    """使用 Fetcher (DATA_SOURCE_PREFERENCE 动态降级) 批量获取个股日线。
+    """使用 StreamEngine 流式闭环 + Fetcher 降级链 批量获取个股日线。
 
-    优化:
-      1) 预探测 — 批量开始前 _probe_source_health
-      2) 并发 — ThreadPoolExecutor
-      3) 超时 — 15 分钟总时限
-      4) 个股级起始日期 — stock_starts 参数支持增量补缺
+    改造为流式模式（替代旧的批量模式）:
+      1) 保持预探测
+      2) 使用 StreamEngine (N worker × 串行闭环)
+      3) 使用 PipelineJournal 记录每个闭环步骤
+      4) 支持增量恢复
+
+    P0 修复:
+      A-CRIT-01: N worker × 串行闭环
+      A-CRIT-02: PROBE 依赖 WRITE 记录
+      Q-CRIT-01: 自适应采样验证
+      Q-CRIT-02: 除权日过滤的跨源验证
 
     Args:
-        stock_starts: {symbol: fetch_start} — 个股级起始日期，None 则全用全局 start
+        stock_starts: {symbol: fetch_start} — 个股级起始日期
+        run_id: 已有 run_id（用于增量续跑），None 则创建新 run
 
     Returns:
         (成功补拉的股票数, {symbol: success} 个股级结果字典)
     """
+    from data.stream_engine import StreamEngine
+    from data.local.pipeline_journal import PipelineJournal
     from shared.fetcher import Fetcher, FetcherGuard
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     import time as _time
 
-    # 1) 健康预探测
+    # 1) 健康预探测（保持原逻辑）
     _probe_source_health("600436", start, end)
 
-    # 2) 批量并发
+    # 2) 初始化 Journal + StreamEngine
+    journal = PipelineJournal()
+    if run_id is None:
+        run_id = journal.start_run("full")
+
     n_total = len(symbols)
-    success = 0
-    failed = 0
-    deadline = _time.time() + 900
     n_workers = min(2, n_total) if n_total > 0 else 1
     _low_delay_guard = FetcherGuard(mean_delay=0.1, std_delay=0.05, burst_limit=50)
 
-    logger.info(f"  批量下载: {n_total} 只, {n_workers} 线程 (超时 900s)")
-    stop_event = threading.Event()
-    per_stock_results: dict[str, bool] = {}
-    _results_lock = threading.Lock()
+    logger.info(f"  流式下载: {n_total} 只, {n_workers} 线程 (StreamEngine)")
 
-    def _fetch_one(sym: str):
-        if stop_event.is_set() or _time.time() > deadline:
-            return None
-        try:
-            fetcher = Fetcher(guard=_low_delay_guard)
-            # 个股级起始日期（增量模式）
-            fstart = stock_starts.get(sym, start) if stock_starts else start
-            df = fetcher.fetch_stock_daily(sym, fstart, end)
-            if not df.empty:
-                return df.assign(symbol=sym) if "symbol" not in df.columns else df
-        except Exception as e:
-            logger.debug(f"  {sym}: {e}")
-        return None
-
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
-        futures = {pool.submit(_fetch_one, sym): sym for sym in symbols}
-        for future in as_completed(futures):
-            sym = futures[future]
-            stock_ok = False
-            try:
-                df = future.result()
-                if df is not None:
-                    warehouse.store_daily_bars(df, if_exists="append")
-                    success += 1
-                    stock_ok = True
-                else:
-                    failed += 1
-            except Exception as e:
-                logger.debug(f"  {sym} store: {e}")
-                failed += 1
-            with _results_lock:
-                per_stock_results[sym] = stock_ok
-
-            # 3) 超时守卫
-            if _time.time() > deadline and not stop_event.is_set():
-                stop_event.set()
-                remaining = n_total - success - failed
-                logger.warning(
-                    f"  超时 (900s), 终止. ok={success} fail={failed} skip={remaining}"
-                )
-
-            # 4) 进度日志
-            done = success + failed
-            if done > 0 and done % 200 == 0:
-                elapsed = _time.time() - (deadline - 900)
-                logger.info(
-                    f"  进度 {done}/{n_total} ({done/n_total*100:.0f}%) "
-                    f"ok={success} fail={failed} {elapsed:.0f}s {done/elapsed:.1f}/s"
-                )
-
-    elapsed = min(900, _time.time() - (deadline - 900))
-    logger.info(
-        f"  完成: {success}/{n_total}, 失败 {failed}, "
-        f"{elapsed:.0f}s, {n_total/max(elapsed,1):.1f}/s"
+    engine = StreamEngine(
+        journal=journal,
+        warehouse=warehouse,
+        n_workers=n_workers,
+        verify_ratio=0.02,
+        verify_min=50,
+        verify_max=200,
     )
 
-    # 交叉验证：盘中模式跳过（留给 16:00 全量管道），全量模式做 50 只
-    if not skip_validation:
+    # B-CRIT-05: 统一降级链（不按股票独立选源）
+    def _fetch_one(sym: str) -> pd.DataFrame:
+        if stock_starts and sym in stock_starts:
+            fstart = stock_starts[sym]
+        else:
+            fstart = start
         try:
-            _cross_validate_sample(symbols, start, end, warehouse)
+            fetcher = Fetcher(guard=_low_delay_guard)
+            df = fetcher.fetch_stock_daily(sym, fstart, end)
+            if df is not None and not df.empty:
+                if "symbol" not in df.columns:
+                    df = df.assign(symbol=sym)
+                return df
         except Exception as e:
-            logger.warning(f"  交叉验证异常（不阻断）: {e}")
+            logger.debug(f"  {sym}: {e}")
+        return pd.DataFrame()
 
-    return success, per_stock_results
+    def _verify_one(sym: str, df: pd.DataFrame) -> bool:
+        """Q-CRIT-02: 除权日过滤的跨源 close 验证"""
+        if skip_validation:
+            return True
+        try:
+            return _cross_validate_stock(sym, df, warehouse, start, end)
+        except Exception as e:
+            logger.debug(f"  verify {sym}: {e}")
+            return True
+
+    # 3) 运行流式闭环
+    stats = engine.run(
+        run_id=run_id,
+        mode="full",
+        symbols=symbols,
+        fetch_fn=_fetch_one,
+        verify_fn=_verify_one if not skip_validation else None,
+        today=end,
+    )
+
+    # 4) 返回全量结果（与旧接口兼容）
+    per_stock_results: dict[str, bool] = {}
+    for sym in symbols:
+        per_stock_results[sym] = journal.has_write_since(sym, end)
+
+    logger.info(
+        f"  流式完成: ok={stats['ok']} fail={stats['fail']} skip={stats['skip']}"
+    )
+    return stats["ok"], per_stock_results
+
+
+def _cross_validate_stock(sym: str, df: pd.DataFrame,
+                          warehouse, start: str, end: str) -> bool:
+    """Q-CRIT-02: 除权日过滤的跨源 close 验证"""
+    import random as _random
+    from data.sources import get_source
+
+    candidates = ["akshare_daily", "sina", "akshare"]
+    validate_src = _random.choice(candidates)
+    try:
+        ds = get_source(validate_src)
+    except Exception:
+        return True
+
+    val_raw = ds.fetch_daily(sym, start, end)
+    if val_raw.empty:
+        return True
+
+    val = val_raw.reset_index() if isinstance(val_raw.index, pd.DatetimeIndex) else val_raw
+    val["date"] = pd.to_datetime(val["date"])
+    main = df.reset_index() if isinstance(df.index, pd.DatetimeIndex) else df
+    main["date"] = pd.to_datetime(main["date"])
+
+    merged = main.merge(val[["date", "close"]], on="date", suffixes=("_main", "_val"))
+    if len(merged) < 5:
+        return True
+
+    # Q-CRIT-02: 过滤除权日前后异常变化
+    merged["pct_chg"] = merged["close_main"].pct_change().abs()
+    merged["pct_chg_val"] = merged["close_val"].pct_change().abs()
+    clean = merged[
+        (merged["pct_chg"].fillna(0) < 0.05) &
+        (merged["pct_chg_val"].fillna(0) < 0.05)
+    ]
+    if len(clean) < 5:
+        return True
+
+    corr = clean["close_main"].corr(clean["close_val"])
+    ok = corr > 0.99
+    if not ok:
+        logger.warning(f"交叉验证失败: {sym} corr={corr:.4f} src={validate_src}")
+    return ok
 
 
 def _next_trading_day(date_str: str) -> str:
@@ -470,10 +511,16 @@ def update_daily_bars_all(
 
     logger.info(f"需下载: {len(need_fetch)} 只 (增量模式)")
 
-    # Fetcher 多线程并发下载（带个股级起始日期）
+    from data.local.pipeline_journal import PipelineJournal
+    journal = PipelineJournal()
+    run_id = journal.start_run("full")
+    logger.info(f"  流式 run_id={run_id}")
+
+    # Fetcher 流式闭环（带 Journal + StreamEngine）
     _fetch_failed_with_fetcher(
         need_fetch, start, end, warehouse,
         skip_validation=skip_validation, stock_starts=stock_starts,
+        run_id=run_id,
     )
 
     stats = warehouse.table_stats()
