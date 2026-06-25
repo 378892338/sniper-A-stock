@@ -131,3 +131,7 @@ register_source("eastmoney_fundflow", EastMoneyFundFlowSource)
 # EastMoney 龙虎榜直连（disabled：API 恢复后激活）
 from data.sources.eastmoney_dt import EastMoneyDTSource
 register_source("eastmoney_dt", EastMoneyDTSource)
+
+# mootdx 实时行情（12:00 盘中专用）
+from data.sources.mootdx_realtime import MootdxRealtimeSource
+register_source("mootdx_realtime", MootdxRealtimeSource)
