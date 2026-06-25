@@ -1,18 +1,21 @@
+"""PipelineJournal 单元测试 — 使用唯一 symbol 防跨测试污染"""
+
 from data.local.pipeline_journal import PipelineJournal
 
 
 def test_journal_lifecycle():
     journal = PipelineJournal()
     run_id = journal.start_run("test")
-    journal.log(run_id, "probe", "000001", "ok")
-    journal.log(run_id, "fetch", "000001", "ok",
+    sym = "LIFECYCLE_001"
+    journal.log(run_id, "probe", sym, "ok")
+    journal.log(run_id, "fetch", sym, "ok",
                 source="mootdx", data_start="2026-01-01", data_end="2026-06-25",
                 rows_count=176, elapsed_ms=350)
-    journal.log(run_id, "write", "000001", "ok",
+    journal.log(run_id, "write", sym, "ok",
                 data_start="2026-01-01", data_end="2026-06-25",
                 rows_count=176, elapsed_ms=120)
 
-    last = journal.get_last_fetch("000001")
+    last = journal.get_last_fetch(sym)
     assert last is not None
     assert last["data_end"] == "2026-06-25"
     assert last["source"] == "mootdx"
@@ -28,32 +31,39 @@ def test_journal_lifecycle():
 def test_has_write_since():
     journal = PipelineJournal()
     run_id = journal.start_run("test2")
-    journal.log(run_id, "write", "000001", "ok",
+    ws_a = "WRITESINCE_A"
+    ws_b = "WRITESINCE_B"
+    ws_c = "WRITESINCE_C"
+    journal.log(run_id, "write", ws_a, "ok",
                 data_start="2026-01-01", data_end="2026-06-25")
-    journal.log(run_id, "write", "600519", "ok",
+    journal.log(run_id, "write", ws_b, "ok",
                 data_start="2026-01-01", data_end="2026-06-26")
 
-    assert journal.has_write_since("000001", "2026-06-26") is False
-    assert journal.has_write_since("600519", "2026-06-26") is True
-    assert journal.has_write_since("999999", "2026-06-26") is False
+    assert journal.has_write_since(ws_a, "2026-06-26") is False
+    assert journal.has_write_since(ws_b, "2026-06-26") is True
+    assert journal.has_write_since(ws_c, "2026-06-26") is False
 
 
 def test_get_missing_stocks_fast():
     journal = PipelineJournal()
     run_id = journal.start_run("test3")
-    journal.log(run_id, "write", "000001", "ok",
+    ms_a = "MISSING_A"
+    ms_b = "MISSING_B"
+    ms_c = "MISSING_C"
+    ms_d = "MISSING_D"
+    journal.log(run_id, "write", ms_a, "ok",
                 data_start="2026-01-01", data_end="2026-06-25")
-    journal.log(run_id, "write", "600519", "ok",
+    journal.log(run_id, "write", ms_b, "ok",
                 data_start="2026-01-01", data_end="2026-06-26")
-    journal.log(run_id, "write", "600036", "fail",
+    journal.log(run_id, "write", ms_c, "fail",
                 data_start="2026-01-01", data_end="2026-06-26")
 
-    symbols = ["000001", "600519", "600036", "601318"]
+    symbols = [ms_a, ms_b, ms_c, ms_d]
     missing = journal.get_missing_stocks_fast(symbols, "2026-06-26")
-    assert "600519" not in missing
-    assert "000001" in missing
-    assert "600036" in missing
-    assert "601318" in missing
+    assert ms_b not in missing  # ok + data_end >= today
+    assert ms_a in missing      # ok but data_end < today
+    assert ms_c in missing      # fail
+    assert ms_d in missing      # no record
 
 
 def test_cleanup():
@@ -61,9 +71,11 @@ def test_cleanup():
     conn = journal._conn()
     conn.execute(
         "INSERT INTO pipeline_journal(run_id,mode,step,symbol,timestamp,status)"
-        "VALUES('old','test','fetch','cleanup_sym','2020-01-01T00:00:00','ok')")
+        "VALUES('cleanup_run','test','fetch','CLEANUP_SYM','2020-01-01T00:00:00','ok')")
     conn.commit()
     conn.close()
+
     journal.cleanup(keep_days=1)
-    last = journal.get_last_fetch("cleanup_sym")
+
+    last = journal.get_last_fetch("CLEANUP_SYM")
     assert last is None
