@@ -54,6 +54,7 @@ class MootdxRealtimeSource:
         self.ip_pool = ip_pool or _IP_POOL
         self.heartbeat = heartbeat
         self._last_call = 0.0
+        self._working_server: tuple | None = None
 
     def _rate_limit(self):
         elapsed = _time.time() - self._last_call
@@ -62,6 +63,8 @@ class MootdxRealtimeSource:
         self._last_call = _time.time()
 
     def _pick_server(self) -> tuple[str, int]:
+        if self._working_server:
+            return self._working_server
         entry = random.choice(self.ip_pool)
         parts = entry.split(":")
         return (parts[0], int(parts[1]) if len(parts) > 1 else 7709)
@@ -69,10 +72,20 @@ class MootdxRealtimeSource:
     def _connect(self):
         ip, port = self._pick_server()
         logger.debug(f"mootdx connect: {ip}:{port}")
-        return Quotes.factory(
-            market="std", server=(ip, port), timeout=15,
-            heartbeat=self.heartbeat, bestip=False,
-        )
+        try:
+            return Quotes.factory(
+                market="std", server=(ip, port), timeout=10,
+                heartbeat=self.heartbeat, bestip=False,
+            )
+        except Exception:
+            # Fallback to bestip auto-detect if random server fails
+            logger.info(f"mootdx: {ip}:{port} failed, using bestip auto-detect")
+            client = Quotes.factory(
+                market="std", timeout=15,
+                heartbeat=self.heartbeat, bestip=True,
+            )
+            self._working_server = (client.server[0], client.server[1])
+            return client
 
     def fetch_quotes(self, symbols: list[str]) -> pd.DataFrame:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -94,8 +107,20 @@ class MootdxRealtimeSource:
             try:
                 result = client.quotes(symbol=batch)
                 if result is None or result.empty:
-                    logger.warning(f"mootdx batch empty: offset={i}")
-                    continue
+                    logger.warning(f"mootdx batch empty (retry bestip): offset={i}")
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+                    client = Quotes.factory(
+                        market="std", timeout=15,
+                        heartbeat=self.heartbeat, bestip=True,
+                    )
+                    self._working_server = (client.server[0], client.server[1])
+                    result = client.quotes(symbol=batch)
+                    if result is None or result.empty:
+                        logger.warning(f"mootdx bestip also empty: offset={i}")
+                        continue
 
                 for _, row in result.iterrows():
                     vol_hand = row["vol"] / 100.0 if pd.notna(row.get("vol")) else 0.0
