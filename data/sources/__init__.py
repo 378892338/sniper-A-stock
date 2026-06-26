@@ -132,6 +132,4 @@ register_source("eastmoney_fundflow", EastMoneyFundFlowSource)
 from data.sources.eastmoney_dt import EastMoneyDTSource
 register_source("eastmoney_dt", EastMoneyDTSource)
 
-# mootdx 实时行情（12:00 盘中专用）
-from data.sources.mootdx_realtime import MootdxRealtimeSource
-register_source("mootdx_realtime", MootdxRealtimeSource)
+# mootdx 实时行情（12:00 盘中专用）— 不注册为 DataSource（非 ABC 实现，直接用 import）

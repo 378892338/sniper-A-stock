@@ -190,5 +190,5 @@ SECTOR_INTEGRATION = {
     "alpha_period_weights": {"1w": 0.2, "4w": 0.4, "13w": 0.4},
 }
 
-# ============ 盘中数据源配置 ============
+# ============ 盘中数据源配置（预留 — 当前只使用 mootdx_realtime）============
 INTRADAY_SOURCE_PREFERENCE = ["mootdx_realtime", "tencent"]

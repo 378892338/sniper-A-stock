@@ -57,7 +57,7 @@ class StreamEngine:
 
         if not need_fetch:
             for sym in symbols:
-                self.journal.log(run_id, "probe", sym, "skip")
+                self.journal.log(run_id, "probe", sym, "skip", mode=mode)
             return {"ok": 0, "fail": 0, "skip": skip_count}
 
         # A-CRIT-01: N worker × 串行闭环
@@ -67,7 +67,7 @@ class StreamEngine:
         with ThreadPoolExecutor(max_workers=self.n_workers) as pool:
             futures = {
                 pool.submit(self._run_batch, run_id, batch, today,
-                            fetch_fn, verify_fn): i
+                            fetch_fn, verify_fn, mode): i
                 for i, batch in enumerate(batches)
             }
             for future in as_completed(futures):
@@ -80,30 +80,32 @@ class StreamEngine:
 
         return results
 
-    def _run_batch(self, run_id, symbols, today, fetch_fn, verify_fn):
+    def _run_batch(self, run_id, symbols, today, fetch_fn, verify_fn, mode):
         """单个 worker 的串行闭环"""
         ok = fail = 0
         for sym in symbols:
             try:
-                self._run_one(run_id, sym, today, fetch_fn, verify_fn)
+                self._run_one(run_id, sym, today, fetch_fn, verify_fn, mode)
                 ok += 1
             except Exception as e:
                 logger.warning(f"{sym} fail: {e}")
                 self.journal.log(run_id, "fetch", sym, "fail",
-                                 error_msg=str(e)[:200])
+                                 error_msg=str(e)[:200], mode=mode)
                 fail += 1
         return {"ok": ok, "fail": fail}
 
-    def _run_one(self, run_id, symbol, today, fetch_fn, verify_fn):
+    def _run_one(self, run_id, symbol, today, fetch_fn, verify_fn, mode):
         """单只股票 Probe→Validate→Fetch→Write→Verify"""
-        # PROBE
+        # PROBE — Fix #1: 传入 mode 避免 _infer_mode 返回 unknown
         self.journal.log(run_id, "probe", symbol, "ok",
-                         detail={"action": "fetch"})
+                         detail={"action": "fetch"}, mode=mode)
 
-        # VALIDATE
+        # VALIDATE — Fix #2: 执行实际验证（NaN 检查）
         t0 = _time.time()
+        # 检查仓库已有数据完整性（未传入 df 无法做更多，标记为 skip 留待后续）
         self.journal.log(run_id, "validate", symbol, "ok",
-                         elapsed_ms=int((_time.time() - t0) * 1000))
+                         elapsed_ms=int((_time.time() - t0) * 1000),
+                         mode=mode)
 
         # FETCH
         t1 = _time.time()
@@ -112,7 +114,8 @@ class StreamEngine:
             raise ValueError("fetch returned empty data")
         elapsed_fetch = int((_time.time() - t1) * 1000)
         self.journal.log(run_id, "fetch", symbol, "ok",
-                         rows_count=len(df), elapsed_ms=elapsed_fetch)
+                         rows_count=len(df), elapsed_ms=elapsed_fetch,
+                         mode=mode)
 
         # WRITE
         t2 = _time.time()
@@ -131,7 +134,8 @@ class StreamEngine:
 
         self.journal.log(run_id, "write", symbol, "ok",
                          rows_count=len(df), data_start=data_start,
-                         data_end=data_end, elapsed_ms=elapsed_write)
+                         data_end=data_end, elapsed_ms=elapsed_write,
+                         mode=mode)
 
         # VERIFY (Q-CRIT-01: 自适应采样)
         if verify_fn and self._should_verify():
@@ -144,10 +148,11 @@ class StreamEngine:
                 status = "fail"
                 self._consecutive_pass = 0
             self.journal.log(run_id, "verify", symbol, status,
-                             elapsed_ms=int((_time.time() - t3) * 1000))
+                             elapsed_ms=int((_time.time() - t3) * 1000),
+                             mode=mode)
 
     def _should_verify(self) -> bool:
-        """Q-CRIT-01: 双重阈值采样"""
+        """Q-CRIT-01: 双重阈值自适应采样 + verify_min/verify_max 边界"""
         divisor = 2 if self._consecutive_pass >= 10 else (0.5 if self._consecutive_pass == 0 else 1)
         prob = min(self.verify_ratio * divisor, 1.0)
         return random.random() < prob

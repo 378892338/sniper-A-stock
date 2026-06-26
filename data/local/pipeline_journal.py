@@ -36,9 +36,12 @@ class PipelineJournal:
             detail: dict | None = None, source: str | None = None,
             data_start: str | None = None, data_end: str | None = None,
             rows_count: int | None = None, error_msg: str | None = None,
-            elapsed_ms: int | None = None):
+            elapsed_ms: int | None = None, mode: str | None = None):
+        """写入一条日志记录。mode 优先使用传入值，无传入时从 DB 推断（仅首次可能出错）。"""
         if step not in _STEP_ORDER:
             logger.warning(f"未知 step: {step}")
+        # Fix #1: 首次写入传入 mode 避免 _infer_mode 返回 unknown
+        resolved_mode = mode if mode else self._infer_mode(run_id)
         conn = self._conn()
         try:
             conn.execute(
@@ -47,7 +50,7 @@ class PipelineJournal:
                     elapsed_ms, detail, source, data_start, data_end,
                     rows_count, error_msg)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (run_id, self._infer_mode(run_id), step, symbol,
+                (run_id, resolved_mode, step, symbol,
                  datetime.now().isoformat(), status,
                  elapsed_ms, json.dumps(detail or {}, ensure_ascii=False),
                  source, data_start, data_end, rows_count, error_msg),

@@ -364,9 +364,9 @@ def _cross_validate_stock(sym: str, df: pd.DataFrame,
     if val_raw.empty:
         return True
 
-    val = val_raw.reset_index() if isinstance(val_raw.index, pd.DatetimeIndex) else val_raw
+    val = val_raw.reset_index() if isinstance(val_raw.index, pd.DatetimeIndex) else val_raw.copy()
     val["date"] = pd.to_datetime(val["date"])
-    main = df.reset_index() if isinstance(df.index, pd.DatetimeIndex) else df
+    main = df.reset_index() if isinstance(df.index, pd.DatetimeIndex) else df.copy()
     main["date"] = pd.to_datetime(main["date"])
 
     merged = main.merge(val[["date", "close"]], on="date", suffixes=("_main", "_val"))

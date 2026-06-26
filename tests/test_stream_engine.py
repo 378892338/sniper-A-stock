@@ -34,6 +34,6 @@ def test_run_one_probe_journal():
             "close": [10.5], "volume": [10000], "amount": [105000],
         })
 
-    engine._run_one(run_id, "000001", "2026-06-26", mock_fetch, verify_fn=None)
+    engine._run_one(run_id, "000001", "2026-06-26", mock_fetch, verify_fn=None, mode="test")
     summary = journal.get_run_summary(run_id)
     assert summary["total"] >= 3
