@@ -1519,7 +1519,7 @@ def _generate_md(date: str) -> str:
 
 def _update_obsidian_index(obsidian_dir: Path, date: str, html_file: Path, md_file: Path):
     """更新 Obsidian 索引文件，列出所有日报。"""
-    idx = obsidian_dir / "量化日报索引.md"
+    idx = obsidian_dir / "_量化日报索引.md"
 
     htmls = sorted(obsidian_dir.glob("量化日报_*.html"), reverse=True)
     mds = sorted(obsidian_dir.glob("量化日报_*.md"), reverse=True)
