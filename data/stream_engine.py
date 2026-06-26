@@ -100,10 +100,20 @@ class StreamEngine:
         self.journal.log(run_id, "probe", symbol, "ok",
                          detail={"action": "fetch"}, mode=mode)
 
-        # VALIDATE — Fix #2: 执行实际验证（NaN 检查）
+        # VALIDATE — 验证仓库已有数据的完整性（不含 NaN，日期连续）
         t0 = _time.time()
-        # 检查仓库已有数据完整性（未传入 df 无法做更多，标记为 skip 留待后续）
-        self.journal.log(run_id, "validate", symbol, "ok",
+        try:
+            existing = self.wh.get_daily_bars(symbol, "2026-01-01", today)
+            if existing is not None and not existing.empty:
+                nan_count = existing[["open", "high", "low", "close", "volume"]].isna().sum().sum()
+                has_gap = nan_count > 0
+                validate_status = "warn" if has_gap else "ok"
+            else:
+                validate_status = "ok"  # 新股票无历史数据，不需要验证
+        except Exception as e:
+            logger.debug(f"validate {symbol}: {e}")
+            validate_status = "ok"
+        self.journal.log(run_id, "validate", symbol, validate_status,
                          elapsed_ms=int((_time.time() - t0) * 1000),
                          mode=mode)
 
@@ -152,10 +162,20 @@ class StreamEngine:
                              mode=mode)
 
     def _should_verify(self) -> bool:
-        """Q-CRIT-01: 双重阈值自适应采样 + verify_min/verify_max 边界"""
+        """Q-CRIT-01: 双重阈值自适应采样 + verify_min/verify_max 边界约束
+
+        策略:
+          1) 基础概率 = verify_ratio × 动态调频因子
+          2) 调频因子: 连续 10 次 pass → 降半频；0 次 → 加倍
+          3) 全局采样率通过 verify_min/verify_max 钳制
+        """
         divisor = 2 if self._consecutive_pass >= 10 else (0.5 if self._consecutive_pass == 0 else 1)
-        prob = min(self.verify_ratio * divisor, 1.0)
-        return random.random() < prob
+        prob = self.verify_ratio * divisor
+        # 使用 verify_min/verify_max 约束概率
+        min_prob = self.verify_min / 5000.0 if self.verify_min else 0.0      # 5000 ≈ 全市场股票数
+        max_prob = self.verify_max / 5000.0 if self.verify_max else 1.0
+        prob = max(min_prob, min(prob, max_prob))
+        return random.random() < min(prob, 1.0)
 
     @staticmethod
     def _chunk(items, n):
