@@ -18,7 +18,7 @@ if _env_file.exists():
 # ============ 数据源配置 ============
 # "akshare" | "akshare_daily" | "tushare" | "auto" — auto 按 DATA_SOURCE_PREFERENCE 顺序选第一个可用的
 DATA_SOURCE = "auto"
-DATA_SOURCE_PREFERENCE = ["jqdata", "akshare_daily", "akshare", "10jqka", "sina", "tushare", "baostock", "eastmoney"]
+DATA_SOURCE_PREFERENCE = ["mootdx", "10jqka", "akshare_daily", "akshare", "sina", "tushare", "baostock", "eastmoney"]
 TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
 
 # JQData（聚宽）配置
