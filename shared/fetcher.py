@@ -50,6 +50,8 @@ SOURCE_ENDPOINTS = {
     "tushare": "tushare_price",
     "baostock": "baostock_price",
     "jqdata": "jqdata_price",
+    "mootdx": "mootdx_price",
+    "10jqka": "10jqka_price",
 }
 
 
