@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from data.local.warehouse import LocalDataWarehouse
 from data.local.updater import update_market_indices, update_sw_indices
-from data.sources.akshare import AkshareDailySource
 from core.logger import get_logger
 
 logger = get_logger("scripts.postclose")
@@ -29,7 +28,11 @@ logger.info("=== 指数 ===")
 update_market_indices(wh, start=today, end=today)
 update_sw_indices(wh, start=today, end=today)
 
-# 2. 个股日线补更
+# 2. 数据源探针 + 个股日线补更
+logger.info("=== 数据源探针 ===")
+from data.local.updater import _probe_source_health
+_probe_source_health("600436", today, today)
+
 logger.info("=== 日线补更 ===")
 stock_df = wh.get_stock_list(status="active")
 symbols = [s for s in stock_df["symbol"].tolist() if not s.startswith("920")]
@@ -39,13 +42,12 @@ logger.info(f"需补 {len(need)} 只")
 ok = fail = 0
 def _fetch(sym):
     try:
-        ds = AkshareDailySource()
-        df = ds.fetch_daily(sym, today, today)
+        from shared.fetcher import Fetcher, FetcherGuard
+        f = Fetcher(guard=FetcherGuard(mean_delay=0.05, std_delay=0.02, burst_limit=100))
+        df = f.fetch_stock_daily(sym, today, today)
         if df is not None and not df.empty:
-            allowed = {"date","symbol","open","high","low","close","volume","amount","turnover","pct_chg"}
-            extra = set(df.columns) - allowed
-            if extra:
-                df = df.drop(columns=list(extra))
+            if "symbol" not in df.columns:
+                df = df.assign(symbol=sym)
             return sym, df
     except Exception:
         pass
