@@ -19,6 +19,11 @@ today = datetime.now().strftime("%Y-%m-%d")
 
 wh = LocalDataWarehouse()
 
+# 交易日守卫
+if not wh.is_trading_day(today):
+    logger.info(f"非交易日 {today}，跳过")
+    raise SystemExit(0)
+
 # 1. 指数更新
 logger.info("=== 指数 ===")
 update_market_indices(wh, start=today, end=today)
