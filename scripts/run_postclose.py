@@ -109,4 +109,9 @@ if coverage >= COVERAGE_THRESHOLD:
     success = run_pipeline(today)
     logger.info(f"日报: {'OK' if success else 'FAILED'}")
 else:
-    logger.warning(f"重试{MAX_RETRIES}轮后覆盖率仍 {coverage:.1%} < {COVERAGE_THRESHOLD:.0%}，跳过日报")
+    logger.warning(f"重试{MAX_RETRIES}轮后覆盖率仍 {coverage:.1%} < {COVERAGE_THRESHOLD:.0%}")
+    import os as _os
+    _os.environ["COVERAGE_WARNING"] = f"数据覆盖率仅 {coverage:.1%}（{covered}/{total_active}），部分股票数据缺失"
+    from scripts.run_pipeline import run_pipeline
+    success = run_pipeline(today)
+    logger.info(f"日报(含警告): {'OK' if success else 'FAILED'}")

@@ -1315,8 +1315,14 @@ def generate_html(date: str) -> str:
     ds_report = collect_data_source(date)
 
     # 组装 HTML
+    _cov_warn = os.environ.get("COVERAGE_WARNING", "")
+    _cov_banner = (f'<div style="background:#fef2f2;border:2px solid #dc2626;'
+                   f'border-radius:8px;padding:12px 20px;margin:12px 24px;'
+                   f'font-size:14px;color:#991b1b;font-weight:bold;">'
+                   f'⚠️ {_cov_warn}</div>') if _cov_warn else ""
     sections = [
         _html_header(date),
+        _cov_banner,
         section_executive_summary(l0_info, positions, daily_values, m, l4_warnings),
         section_market_depth(l0_info, l0_trend, l0_weekly, l0_daily, l1_df, candidates, sector_ranks),
         section_portfolio_advice(l0_info, positions, l4_warnings, daily_values, candidates),
