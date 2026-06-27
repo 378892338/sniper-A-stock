@@ -80,7 +80,7 @@ logger.info(f"日线: {ok} ok, {fail} fail")
 
 # 3. 覆盖率检查 — 数据不全不跑日报
 logger.info("=== 覆盖率检查 ===")
-COVERAGE_THRESHOLD = 0.95  # 至少 95% 活跃股有今日数据才跑日报
+COVERAGE_THRESHOLD = 0.99  # 至少 99% 活跃股有今日数据才跑日报
 total_active = len(symbols)
 covered = ok + (total_active - len(need))  # 已有 + 新增
 coverage = covered / total_active if total_active > 0 else 0
