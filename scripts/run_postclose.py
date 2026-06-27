@@ -28,17 +28,10 @@ logger.info("=== 指数 ===")
 update_market_indices(wh, start=today, end=today)
 update_sw_indices(wh, start=today, end=today)
 
-# 2. 数据源探针
+# 2. 数据源探针（仅用于信息输出）
 logger.info("=== 数据源探针 ===")
 from data.local.updater import _probe_source_health
 _probe_source_health("600436", today, today)
-
-# 按探针结果选择最快源：直连(10jqka)→直连(akshare_daily)→Fetcher降级链
-from shared.retry import health_tracker
-from shared.fetcher import SOURCE_ENDPOINTS
-available = [n for n in ["10jqka", "akshare_daily", "akshare"]
-             if (ep := SOURCE_ENDPOINTS.get(n)) and health_tracker.is_available(ep)]
-logger.info(f"可用源: {available}")
 
 logger.info("=== 日线补更 ===")
 stock_df = wh.get_stock_list(status="active")
@@ -47,18 +40,25 @@ need = [s for s in symbols if not wh.get_last_date("daily_bars", "symbol", s) or
 logger.info(f"需补 {len(need)} 只, workers=5")
 
 ok = fail = 0
+
 def _fetch(sym):
+    """直连优先 → 失败随时切 Fetcher 降级链"""
+    # 先尝试直连 10jqka（同花顺，速度快）
     try:
-        if available:
-            # 直连最快源（不经过 Fetcher 降级链）
-            from data.sources import get_source
-            ds = get_source(available[0])
-            df = ds.fetch_daily(sym, today, today)
-        else:
-            # 降级：Fetcher 链
-            from shared.fetcher import Fetcher, FetcherGuard
-            f = Fetcher(guard=FetcherGuard(mean_delay=0.05, std_delay=0.02, burst_limit=100))
-            df = f.fetch_stock_daily(sym, today, today)
+        from data.sources.hexin import HexinDataSource
+        ds = HexinDataSource()
+        df = ds.fetch_daily(sym, today, today)
+        if df is not None and not df.empty:
+            if "symbol" not in df.columns:
+                df = df.assign(symbol=sym)
+            return sym, df
+    except Exception:
+        pass
+    # 直连空/失败 → 走 Fetcher 降级链
+    try:
+        from shared.fetcher import Fetcher, FetcherGuard
+        f = Fetcher(guard=FetcherGuard(mean_delay=0.05, std_delay=0.02, burst_limit=100))
+        df = f.fetch_stock_daily(sym, today, today)
         if df is not None and not df.empty:
             if "symbol" not in df.columns:
                 df = df.assign(symbol=sym)
