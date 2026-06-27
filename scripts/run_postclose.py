@@ -67,29 +67,46 @@ def _fetch(sym):
         pass
     return sym, None
 
-with ThreadPoolExecutor(max_workers=5) as pool:
-    futures = {pool.submit(_fetch, sym): sym for sym in need}
-    for f in as_completed(futures):
-        sym, df = f.result()
-        if df is not None:
-            wh.store_daily_bars(df, if_exists="append")
-            ok += 1
-        else:
-            fail += 1
-logger.info(f"日线: {ok} ok, {fail} fail")
-
-# 3. 覆盖率检查 — 数据不全不跑日报
-logger.info("=== 覆盖率检查 ===")
-COVERAGE_THRESHOLD = 0.99  # 至少 99% 活跃股有今日数据才跑日报
+COVERAGE_THRESHOLD = 0.99
+MAX_RETRIES = 3
 total_active = len(symbols)
-covered = ok + (total_active - len(need))  # 已有 + 新增
-coverage = covered / total_active if total_active > 0 else 0
-logger.info(f"覆盖率: {covered}/{total_active} = {coverage:.1%} (阈值 {COVERAGE_THRESHOLD:.0%})")
 
-if coverage < COVERAGE_THRESHOLD:
-    logger.warning(f"覆盖率 {coverage:.1%} < {COVERAGE_THRESHOLD:.0%}，跳过日报生成")
-else:
+# 下载 + 覆盖率检查循环
+work = list(need)
+for attempt in range(1, MAX_RETRIES + 1):
+    if not work:
+        break
+    logger.info(f"=== 日线补更 (第{attempt}轮, {len(work)}只) ===")
+    ok = fail = 0
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_fetch, sym): sym for sym in work}
+        for f in as_completed(futures):
+            sym, df = f.result()
+            if df is not None:
+                wh.store_daily_bars(df, if_exists="append")
+                ok += 1
+            else:
+                fail += 1
+    logger.info(f"第{attempt}轮: {ok} ok, {fail} fail")
+
+    # 覆盖率
+    covered = sum(1 for s in symbols
+                  if (wh.get_last_date("daily_bars", "symbol", s) or "2000-01-01") >= today)
+    coverage = covered / total_active if total_active > 0 else 0
+    logger.info(f"覆盖率: {covered}/{total_active} = {coverage:.1%}")
+
+    if coverage >= COVERAGE_THRESHOLD:
+        break
+    # 未达标：找出失败股票下轮重试
+    work = [s for s in symbols
+            if not (wh.get_last_date("daily_bars", "symbol", s) or "") >= today]
+    logger.info(f"覆盖率不足，重试 {len(work)} 只")
+
+# 最终判定
+if coverage >= COVERAGE_THRESHOLD:
     logger.info("=== 日报 ===")
     from scripts.run_pipeline import run_pipeline
     success = run_pipeline(today)
     logger.info(f"日报: {'OK' if success else 'FAILED'}")
+else:
+    logger.warning(f"重试{MAX_RETRIES}轮后覆盖率仍 {coverage:.1%} < {COVERAGE_THRESHOLD:.0%}，跳过日报")
