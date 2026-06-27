@@ -43,18 +43,7 @@ ok = fail = 0
 
 def _fetch(sym):
     """直连优先 → 失败随时切 Fetcher 降级链"""
-    # 直连 mootdx（通达信 TCP，最快）
-    try:
-        from data.sources.mootdx import MootdxSource
-        ds = MootdxSource()
-        df = ds.fetch_daily(sym, today, today)
-        if df is not None and not df.empty:
-            if "symbol" not in df.columns:
-                df = df.assign(symbol=sym)
-            return sym, df
-    except Exception:
-        pass
-    # 直连 10jqka（同花顺 HTTP）
+    # 直连 10jqka（同花顺，速度快）
     try:
         from data.sources.hexin import HexinDataSource
         ds = HexinDataSource()
