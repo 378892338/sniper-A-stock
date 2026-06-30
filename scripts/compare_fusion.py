@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sniper.engine.backtest import BacktestEngine
 from sniper.engine.metrics import calculate_metrics
+from sniper.config import FusionConfig
+import sniper.config as _cfg_mod
 from core.logger import get_logger
 
 logger = get_logger("scripts.compare_fusion")
@@ -34,18 +36,34 @@ OUTPUT_DIR = Path("outputs/compare_fusion")
 
 
 def run_single(etf_fusion: bool, label: str,
-               start: str, end: str) -> dict:
-    """运行单次回测, 返回完整结果"""
-    logger.info(f"[{label}] 开始回测 {start}~{end}")
-    engine = BacktestEngine()
-    result = engine.run(
-        start_date=start,
-        end_date=end,
-        etf_fusion=etf_fusion,
-        use_precomputed=True,
-    )
-    logger.info(f"[{label}] 完成: NAV={result.get('final_capital', 0):.0f}")
-    return result
+               start: str, end: str, gating: str = "linear") -> dict:
+    """运行单次回测, 返回完整结果
+
+    gating模式: linear(默认,当前行为)|humpback|humpback_cv|full
+    非linear时临时替换 sniper.config.FUSION 全局单例,
+    BacktestEngine构造时自动读取新配置, finally恢复。
+    """
+    saved = None
+    if gating != "linear":
+        old = _cfg_mod.FUSION
+        saved = old
+        _cfg_mod.FUSION = FusionConfig(
+            gating_mode=gating,
+            l0_min=old.l0_min, l0_max=old.l0_max,
+            w_etf_min=old.w_etf_min, w_etf_max=old.w_etf_max,
+            prior_precision=old.prior_precision, signal_scale=old.signal_scale,
+            epsilon=getattr(old, 'epsilon', 1e-8))
+    try:
+        logger.info(f"[{label}] 开始回测 {start}~{end} gating={gating}")
+        engine = BacktestEngine()
+        result = engine.run(
+            start_date=start, end_date=end,
+            etf_fusion=etf_fusion, use_precomputed=True)
+        logger.info(f"[{label}] 完成: NAV={result.get('final_capital', 0):.0f}")
+        return result
+    finally:
+        if saved is not None:
+            _cfg_mod.FUSION = saved
 
 
 def extract_metrics(result: dict) -> dict:
@@ -117,6 +135,7 @@ def main():
     parser.add_argument("--end", default="2026-05-13", help="回测结束日期")
     parser.add_argument("--bootstrap", type=int, default=1000,
                         help="Bootstrap迭代次数(0=不执行)")
+    parser.add_argument("--gating", default="linear", help="门控模式(linear/humpback/humpback_cv/full)")
     parser.add_argument("--output", default=str(OUTPUT_DIR), help="输出目录")
     args = parser.parse_args()
 
@@ -131,7 +150,7 @@ def main():
 
     # 实验组: ETF融合
     experiment = run_single(etf_fusion=True, label="ETF融合(实验组B)",
-                            start=args.start, end=args.end)
+                            start=args.start, end=args.end, gating=args.gating)
     t2 = time.time()
     logger.info(f"实验组耗时: {t2-t1:.1f}s")
 
