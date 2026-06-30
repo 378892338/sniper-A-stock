@@ -968,6 +968,7 @@ def _run_intraday(date: str) -> bool:
 
     finally:
         _release_intraday_lock()
+        _fw_run(None, f"[intraday] 增量同步开始")
 
 
 def _run_intraday_light(date: str) -> bool:
@@ -1007,6 +1008,7 @@ def _run_intraday_light(date: str) -> bool:
         return True
     finally:
         _release_intraday_lock()
+        _fw_run(None, "[intraday-light]")
 
 
 def main():

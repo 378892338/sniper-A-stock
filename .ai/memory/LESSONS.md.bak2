@@ -1,0 +1,9 @@
+# 经验教训库
+
+> 本目录不再使用。所有经验教训统一写入根级：
+- [规则] [BUG-LOG-SHARING] 多独立脚本（run_pi... [锚点: ANCHOR_1782837941753_7uh6me]
+> D:\projects\.ai\memory\LESSONS.md
+
+--- [ANCHOR_1782837941753_7uh6me] ---
+[BUG-LOG-SHARING] 多独立脚本（run_pipeline、compare_fusion）共享写入同一 pipeline.log 导致日志混杂。MUST 在 core/logger.py 中按模块名路由到不同日志文件，匹配路由的 logger 设 propagate=False 避免写入 root 的 pipeline.log。独立回测脚本还需双向获取 pipeline.lock 避免 L2 数据竞争。
+--- [END_ANCHOR_1782837941753_7uh6me] ---

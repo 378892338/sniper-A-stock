@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "last_modified": "2026-06-30",
+  "description": "14 ETF classification indices — single source of truth",
+  "etfs": {
+    "证券":     {"code": "399975", "exchange": "sz", "akshare_symbol": "sz399975"},
+    "银行":     {"code": "399986", "exchange": "sz", "akshare_symbol": "sz399986"},
+    "军工":     {"code": "399967", "exchange": "sz", "akshare_symbol": "sz399967"},
+    "芯片":     {"code": "990001", "exchange": "sz", "akshare_symbol": "sz990001"},
+    "半导体":   {"code": "399678", "exchange": "sz", "akshare_symbol": "sz399678"},
+    "新能源车": {"code": "399976", "exchange": "sz", "akshare_symbol": "sz399976"},
+    "光伏":     {"code": "399395", "exchange": "sz", "akshare_symbol": "sz399395"},
+    "消费":     {"code": "000932", "exchange": "sh", "akshare_symbol": "sh000932"},
+    "医药":     {"code": "000933", "exchange": "sh", "akshare_symbol": "sh000933"},
+    "酒":       {"code": "399997", "exchange": "sz", "akshare_symbol": "sz399997"},
+    "科技":     {"code": "399440", "exchange": "sz", "akshare_symbol": "sz399440"},
+    "有色":     {"code": "000819", "exchange": "sh", "akshare_symbol": "sh000819"},
+    "煤炭":     {"code": "399998", "exchange": "sz", "akshare_symbol": "sz399998"},
+    "汽车":     {"code": "399432", "exchange": "sz", "akshare_symbol": "sz399432"}
+  }
+}
