@@ -89,11 +89,45 @@ CREATE TABLE IF NOT EXISTS quarterly_financials (
 );
 """
 
+CREATE_INDUSTRY_COMPARE_SW1 = """
+CREATE TABLE IF NOT EXISTS industry_compare_sw1 (
+    date           TEXT NOT NULL,
+    industry_name  TEXT NOT NULL,
+    daily_change   REAL,
+    volume_change  REAL,
+    volume_ratio   REAL,
+    breadth        REAL,
+    leader_symbol  TEXT,
+    leader_change  REAL,
+    rank           INTEGER,
+    stock_count    INTEGER,
+    PRIMARY KEY (date, industry_name)
+);
+"""
+
+CREATE_INDUSTRY_COMPARE_SW2 = """
+CREATE TABLE IF NOT EXISTS industry_compare_sw2 (
+    date           TEXT NOT NULL,
+    industry_name  TEXT NOT NULL,
+    daily_change   REAL,
+    volume_change  REAL,
+    volume_ratio   REAL,
+    breadth        REAL,
+    leader_symbol  TEXT,
+    leader_change  REAL,
+    rank           INTEGER,
+    stock_count    INTEGER,
+    PRIMARY KEY (date, industry_name)
+);
+"""
+
 ALL_SIGNAL_DDLS = [
     CREATE_NORTHBOUND_FLOW,
     CREATE_FUND_FLOW,
     CREATE_DRAGON_TIGER,
     CREATE_INDUSTRY_COMPARE,
+    CREATE_INDUSTRY_COMPARE_SW1,
+    CREATE_INDUSTRY_COMPARE_SW2,
     CREATE_HOT_STOCKS,
     CREATE_QUARTERLY_FINANCIALS,
 ]
@@ -103,5 +137,7 @@ T_NORTHBOUND = "northbound_flow"
 T_FUND_FLOW = "fund_flow"
 T_DRAGON_TIGER = "dragon_tiger"
 T_INDUSTRY_COMPARE = "industry_compare"
+T_INDUSTRY_COMPARE_SW1 = "industry_compare_sw1"
+T_INDUSTRY_COMPARE_SW2 = "industry_compare_sw2"
 T_HOT_STOCKS = "hot_stocks"
 T_QUARTERLY = "quarterly_financials"

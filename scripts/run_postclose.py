@@ -77,16 +77,21 @@ for attempt in range(1, MAX_RETRIES + 1):
     if not work:
         break
     logger.info(f"=== 日线补更 (第{attempt}轮, {len(work)}只) ===")
+    import concurrent.futures as _cf
     ok = fail = 0
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures = {pool.submit(_fetch, sym): sym for sym in work}
-        for f in as_completed(futures):
-            sym, df = f.result()
-            if df is not None:
-                wh.store_daily_bars(df, if_exists="append")
-                ok += 1
-            else:
-                fail += 1
+        try:
+            for f in _cf.as_completed(futures, timeout=300):
+                sym, df = f.result()
+                if df is not None:
+                    wh.store_daily_bars(df, if_exists="append")
+                    ok += 1
+                else:
+                    fail += 1
+        except _cf.TimeoutError:
+            logger.warning(f"第{attempt}轮获取超时(5min)，取消剩余 {len(futures) - ok - fail} 只请求")
+            pool.shutdown(wait=False, cancel_futures=True)
     logger.info(f"第{attempt}轮: {ok} ok, {fail} fail")
 
     # 覆盖率

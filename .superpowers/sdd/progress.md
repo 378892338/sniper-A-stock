@@ -1,2 +1,8 @@
 Task 1: complete (commits b4c75ac, review clean)
 Task 2: complete (commits 83de12d, review clean, 2 inline fixes)
+Task 3: complete (commits 91e9bcd, review clean)
+Task 4: complete (commits feee241, review clean)
+Task 5: complete (commits 5ade5cc, review clean)
+Task 6: complete (commits 64f36b5, review clean)
+Task 7-8: complete (commits e4f8854, review clean)
+Task 9: complete (all 43 tests pass)

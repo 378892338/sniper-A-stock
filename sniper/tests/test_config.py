@@ -7,7 +7,7 @@ class TestMarketConfig:
         cfg = MarketConfig()
         assert cfg.trend_window == 20
         assert cfg.volume_window == 20
-        assert cfg.bullish_threshold == 64.0
+        assert cfg.bullish_threshold == 60.0  # 2026-06-29: 从 64.0 调整为 60.0
         assert cfg.bearish_threshold == 30.0
 
     def test_frozen(self):
@@ -55,10 +55,21 @@ class TestStockConfig:
             cfg.fund_flow_weight, cfg.big_order_weight,
             cfg.dragon_tiger_weight, cfg.eps_weight,
             cfg.roe_weight, cfg.revenue_growth_weight,
-            cfg.market_cap_weight, cfg.turnover_weight,
+            cfg.market_cap_weight,
+            cfg.bottom_fractal_weight,
+            cfg.volume_reversal_weight,
+            cfg.low_volatility_weight,
         ]
         total = sum(weights)
         assert total == 1.0, f"权重总和应为 1.0，实际 {total}"
+
+    def test_new_factor_defaults(self):
+        """2026-06-29 新增因子的默认值验证。"""
+        from sniper.config import StockConfig
+        cfg = StockConfig()
+        assert cfg.bottom_fractal_weight == 0.03
+        assert cfg.volume_reversal_weight == 0.02
+        assert cfg.low_volatility_weight == 0.03
 
 
 class TestEntryConfig:
@@ -69,7 +80,7 @@ class TestEntryConfig:
         assert cfg.hard_max_price == 300.0
         assert cfg.hard_min_volume == 1e6
         assert cfg.hard_not_limit_up is True
-        assert cfg.soft_min_score == 79.0
+        assert cfg.soft_min_score == 61.0  # Optuna 贝叶斯调优 2026-06-11（原 79.0）
         assert cfg.soft_sector_top == 3
 
 
@@ -89,7 +100,7 @@ class TestRiskConfig:
         assert cfg.max_positions == 5
         assert cfg.position_size == 0.07
         assert cfg.min_hold_days == 1
-        assert cfg.active_reduction_l0 == 64.0
+        assert cfg.active_reduction_l0 == 60.0  # 2026-06-29: 与 bullish_threshold 同步
         assert cfg.active_reduction_exposure == 0.30
 
 

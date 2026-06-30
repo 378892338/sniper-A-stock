@@ -547,3 +547,23 @@
 2026-06-24 19:50:55,333 [ERROR] scripts.optimize_target | 原始结果不存在，请先正常采样: C:\Users\1\AppData\Local\Temp\tmpkytdzs_e\nonexistent.pkl
 2026-06-24 19:50:55,336 [ERROR] scripts.optimize_target | 原始结果文件损坏或格式不兼容: invalid load key, 'n'.
 2026-06-24 19:50:55,336 [ERROR] scripts.optimize_target | 请删除 C:\Users\1\AppData\Local\Temp\tmp5j7b0c2b\bad.pkl 后重新正常采样
+2026-06-26 07:55:08,487 [INFO] scripts.optimize_target | 交易过滤: BUY=1, 无PnL=0, 无入场日期=0
+2026-06-26 07:55:08,488 [INFO] scripts.optimize_target | 交易过滤: BUY=0, 无PnL=1, 无入场日期=0
+2026-06-26 07:55:08,490 [INFO] scripts.optimize_target | 交易过滤: BUY=5, 无PnL=0, 无入场日期=0
+2026-06-26 07:55:08,497 [INFO] scripts.optimize_target | 交易过滤: BUY=0, 无PnL=0, 无入场日期=1
+2026-06-26 07:55:08,499 [WARNING] scripts.optimize_target | 日期解析失败: entry=not-a-date, exit=also-bad, symbol=600519
+2026-06-26 07:55:08,513 [INFO] scripts.optimize_target | 原始回测结果已保存: C:\Users\1\AppData\Local\Temp\tmpg57nq4_c\raw_results.pkl
+2026-06-26 07:55:08,527 [INFO] scripts.optimize_target | 已加载 2 组原始回测结果
+2026-06-26 07:55:08,530 [ERROR] scripts.optimize_target | 原始结果不存在，请先正常采样: C:\Users\1\AppData\Local\Temp\tmp8920xmfe\nonexistent.pkl
+2026-06-26 07:55:08,538 [ERROR] scripts.optimize_target | 原始结果文件损坏或格式不兼容: invalid load key, 'n'.
+2026-06-26 07:55:08,538 [ERROR] scripts.optimize_target | 请删除 C:\Users\1\AppData\Local\Temp\tmphcy2lhgv\bad.pkl 后重新正常采样
+2026-06-30 17:22:05,353 [INFO] scripts.optimize_target | 交易过滤: BUY=1, 无PnL=0, 无入场日期=0
+2026-06-30 17:22:05,355 [INFO] scripts.optimize_target | 交易过滤: BUY=0, 无PnL=1, 无入场日期=0
+2026-06-30 17:22:05,357 [INFO] scripts.optimize_target | 交易过滤: BUY=5, 无PnL=0, 无入场日期=0
+2026-06-30 17:22:05,364 [INFO] scripts.optimize_target | 交易过滤: BUY=0, 无PnL=0, 无入场日期=1
+2026-06-30 17:22:05,365 [WARNING] scripts.optimize_target | 日期解析失败: entry=not-a-date, exit=also-bad, symbol=600519
+2026-06-30 17:22:05,379 [INFO] scripts.optimize_target | 原始回测结果已保存: C:\Users\1\AppData\Local\Temp\tmphboh04ui\raw_results.pkl
+2026-06-30 17:22:05,391 [INFO] scripts.optimize_target | 已加载 2 组原始回测结果
+2026-06-30 17:22:05,393 [ERROR] scripts.optimize_target | 原始结果不存在，请先正常采样: C:\Users\1\AppData\Local\Temp\tmp0mn8r_h9\nonexistent.pkl
+2026-06-30 17:22:05,401 [ERROR] scripts.optimize_target | 原始结果文件损坏或格式不兼容: invalid load key, 'n'.
+2026-06-30 17:22:05,401 [ERROR] scripts.optimize_target | 请删除 C:\Users\1\AppData\Local\Temp\tmpok4elqm1\bad.pkl 后重新正常采样

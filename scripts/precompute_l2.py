@@ -1,4 +1,6 @@
-"""L2 因子预计算 — 向量化批量计算所有股票所有交易日的 6 个技术因子
+"""L2 因子预计算 — 向量化批量计算所有股票所有交易日的 9 个技术因子
+
+2026-06-29: 新增 bottom_fractal / volume_reversal / low_volatility，删除 turnover_score。
 
 用法:
   python scripts/precompute_l2.py
@@ -30,8 +32,13 @@ OUTPUT_DIR = Path("outputs/precomputed/l2_factors")
 
 
 def compute_factors_for_stock(sym: str, df: pd.DataFrame) -> pd.DataFrame:
-    """计算单只股票全历史的技术因子（向量化）。"""
+    """计算单只股票全历史的技术因子（向量化）。
+
+    2026-06-29: 新增 bottom_fractal / volume_reversal / low_volatility，删除 turnover_score。
+    """
     close = df["close"].values.astype(float)
+    high = df["high"].values.astype(float)
+    low = df["low"].values.astype(float)
     n = len(df)
     dates = df.index
 
@@ -62,14 +69,41 @@ def compute_factors_for_stock(sym: str, df: pd.DataFrame) -> pd.DataFrame:
     rsi = 100 - 100 / (1 + rs)
     rsi = rsi.clip(0, 100)
 
-    # 11. 市值因子
+    # 5. 市值因子
     if "amount" in df.columns:
         log_amt = np.log(df["amount"].clip(lower=1))
         mcap = ((25 - log_amt) / 10 * 100).clip(0, 100)
     else:
         mcap = pd.Series(50.0, index=dates)
 
-    # 12. 换手率因子（无换手率数据，默认50）
+    # 6. 底分型因子（2026-06-29 新增）: low[i-1] > low[i] < low[i+1] + 有实体
+    low_s = pd.Series(low, index=dates)
+    high_s = pd.Series(high, index=dates)
+    close_s = pd.Series(close, index=dates)
+    bottom_fractal = pd.Series(50.0, index=dates)
+    condition = (
+        (low_s.shift(1) > low_s)                            # low[i-1] > low[i] (左侧更高)
+        & (low_s < low_s.shift(-1))                          # low[i] < low[i+1] (右侧更高)
+        & (close_s > low_s + (high_s - low_s) * 0.3)         # 中间K线有实体
+    )
+    bottom_fractal = bottom_fractal.where(~condition, 100.0)
+
+    # 7. 量价反转因子（2026-06-29 新增）: 5 日量价背离
+    volume_reversal = pd.Series(50.0, index=dates)
+    if "volume" in df.columns:
+        vol_s = df["volume"]
+        ret_5 = close_s / close_s.shift(5) - 1
+        vol_ma5 = vol_s.rolling(5).mean()
+        vol_ratio = vol_s / vol_ma5.replace(0, np.nan)
+        price_dir = np.sign(ret_5)
+        vol_dir = np.sign(vol_ratio - 1)
+        divergence = price_dir * vol_dir
+        volume_reversal = (50 - divergence * 30).clip(0, 100)
+
+    # 8. 低波动率因子（2026-06-29 新增）: 20 日波动率取反
+    daily_ret = close_s.pct_change()
+    vol_20 = daily_ret.rolling(20).std()
+    low_volatility = (50 - vol_20 * 500).clip(0, 100)
 
     result = pd.DataFrame({
         "symbol": sym,
@@ -79,7 +113,9 @@ def compute_factors_for_stock(sym: str, df: pd.DataFrame) -> pd.DataFrame:
         "macd": macd,
         "rsi": rsi,
         "market_cap": mcap,
-        "turnover_score": 50.0,
+        "bottom_fractal": bottom_fractal,
+        "volume_reversal": volume_reversal,
+        "low_volatility": low_volatility,
     }, index=dates)
 
     return result.reset_index(drop=True)
@@ -96,7 +132,7 @@ def precompute_all(start: str = "2019-01-01", end: str | None = None) -> int:
     logger.info("加载 daily_bars...")
     try:
         bars = pd.read_sql(
-            "SELECT symbol, date, close, volume, amount "
+            "SELECT symbol, date, close, high, low, volume, amount "
             "FROM daily_bars WHERE date >= ? AND date <= ? ORDER BY symbol, date",
             conn, params=(start, end),
         )

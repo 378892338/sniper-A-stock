@@ -21,7 +21,7 @@ class MarketConfig:
     volume_weight: float = 0.30         # 量能
     breadth_weight: float = 0.20        # 宽度
     northbound_weight: float = 0.10     # 北向（常缺失，降权）
-    bullish_threshold: float = 64.0     # 2026-06-06 Strategy A: L0≥64开仓（原70.0），与 active_reduction_l0 同步
+    bullish_threshold: float = 60.0     # 2026-06-30 最终确认: L0≥60开仓，单层SW1最优
     bearish_threshold: float = 30.0     # ≤30 → 熊市
 
 
@@ -44,25 +44,35 @@ class StockConfig:
     """L2 个股评分参数
 
     权重设计:
-      - 技术因子（趋势/量能/MACD/RSI/市值/换手）: 70%
+      - 技术因子（趋势/量能/MACD/RSI/市值/底分型/量价反转/低波动）: 75%
         始终有数据，提供基础区分度
-      - 资金因子（资金流/大单/龙虎榜）: 15%
+      - 资金因子（资金流/大单/龙虎榜）: 13%
         数据稀疏，有则加分，无则自动跳过（NaN-aware）
-      - 基本面因子（EPS/ROE/营收增长）: 15%
+      - 基本面因子（EPS/ROE/营收增长）: 12%
         季度更新，有则加分，无则自动跳过（NaN-aware）
+
+    2026-06-29 因子扩展:
+      - 新增 bottom_fractal(底分型), volume_reversal(量价反转), low_volatility(低波动率)
+      - 删除 turnover_weight（daily_bars 无换手率列，恒 50.0 死因子）
+      - 资金面/基本面各压缩 2%/3% 释放权重给新技术因子
     """
     trend_factor_weight: float = 0.25
     volume_factor_weight: float = 0.15
     macd_factor_weight: float = 0.15
     rsi_factor_weight: float = 0.08
-    fund_flow_weight: float = 0.07
-    big_order_weight: float = 0.05
-    dragon_tiger_weight: float = 0.03
-    eps_weight: float = 0.07
-    roe_weight: float = 0.04
-    revenue_growth_weight: float = 0.04
     market_cap_weight: float = 0.04
-    turnover_weight: float = 0.03
+    # 2026-06-29 新增: 形态识别
+    bottom_fractal_weight: float = 0.03
+    # 2026-06-29 新增: 量价背离反转
+    volume_reversal_weight: float = 0.02
+    # 2026-06-29 新增: 低波动率 alpha
+    low_volatility_weight: float = 0.03
+    fund_flow_weight: float = 0.06
+    big_order_weight: float = 0.04
+    dragon_tiger_weight: float = 0.03
+    eps_weight: float = 0.06
+    roe_weight: float = 0.03
+    revenue_growth_weight: float = 0.03
     momentum_window: int = 10
     rsi_window: int = 14
     top_n: int = 10
@@ -105,7 +115,7 @@ class RiskConfig:
     max_total_loss: float = -0.20       # 提前风控
     portfolio_drawdown_limit: float = -0.05  # 2026-06-06 组合回撤5%强制减仓
     min_hold_days: int = 1
-    active_reduction_l0: float = 64.0          # L0低于此值主动减仓
+    active_reduction_l0: float = 60.0             # 与 bullish_threshold 同步
     active_reduction_exposure: float = 0.30     # 主动减仓目标总暴露
 
 
@@ -131,6 +141,99 @@ EXIT = ExitConfig()
 RISK = RiskConfig()
 BACKTEST = BacktestConfig()
 
+# ── ETF 动量评分参数 ──
+
+@dataclass(frozen=True)
+class EtfMomentumConfig:
+    """ETF动量评分权重 — 全部有语义锚点"""
+    # 4维评分权重
+    w_high_proximity: float = 0.40     # 60日新高接近度
+    w_ma60_deviation: float = 0.30     # MA60偏离度
+    w_fund_validation: float = 0.20    # 资金验证
+    w_continuation: float = 0.10       # 延续确认
+    # 窗口参数
+    window_high: int = 60
+    window_ma: int = 60
+    window_fund: int = 20
+    window_cont: int = 5
+    freshness_hours: int = 24
+    # 60日新高衰减(评审WARN项修复: 连续创新高导致信号饱和)
+    high_decay_enabled: bool = True
+    high_decay_start: int = 3           # 连续3天后开始衰减
+    high_decay_min: float = 0.3         # 最低保留30%
+    high_decay_rate: float = 0.1        # 每天衰减10%
+    # 数值稳定性
+    epsilon: float = 1e-8
+
+    def __post_init__(self):
+        assert 0 <= self.w_high_proximity <= 1
+        assert 0 <= self.high_decay_min <= 1
+        assert self.high_decay_start >= 1
+
+
+@dataclass(frozen=True)
+class FusionConfig:
+    """融合引擎超参数 — l0_min与MarketConfig锚点同步"""
+    # L0-gated 市场状态锚点
+    l0_min: float = MARKET.bearish_threshold   # 引用MarketConfig,防脱同步
+    l0_max: float = 80.0                        # ETF权重饱和天花板
+    # ETF先验权重边界
+    w_etf_min: float = 0.10
+    w_etf_max: float = 0.70
+    # 贝叶斯精度映射
+    prior_precision: float = 1.0               # SW1后验权重>=65%, ETF<=35%
+    signal_scale: float = 25.0                 # signal_gain最大值0.762
+    # 数值保护
+    epsilon: float = 1e-8
+
+    def __post_init__(self):
+        assert self.l0_min < self.l0_max, "l0_min must be < l0_max"
+        assert 0 <= self.w_etf_min < self.w_etf_max <= 1.0
+        assert self.prior_precision > 0
+
+
+@dataclass(frozen=True)
+class DdrConfig:
+    """DDR分歧诊断参数 — 纯诊断不调权"""
+    convergent_threshold: float = 0.5   # |delta_z| < 0.5 -> CONVERGENT
+    leading_threshold: float = 1.5      # |delta_z| > 1.5 -> ETF/SW1_LEADING
+    coverage_gap_enabled: bool = True   # 监控ETF覆盖偏差
+
+    def __post_init__(self):
+        assert 0 < self.convergent_threshold < self.leading_threshold
+
+
+@dataclass(frozen=True)
+class DegradationConfig:
+    """降级仲裁与恢复条件参数"""
+    # 恢复条件(评审FAIL-15修复: 全量化退出条件)
+    yellow_to_green_days: int = 3
+    orange_to_yellow_days: int = 2
+    red_to_orange_days: int = 1
+    orange_to_yellow_w_etf_ratio: float = 0.5
+    smooth_transition_days: int = 2
+    # 同步屏障(评审FAIL-16修复: ThreadPoolExecutor取代asyncio)
+    etf_timeout_seconds: int = 120
+    sw1_timeout_seconds: int = 120
+    hard_deadline: str = "15:10"
+    # 冷启动(评审FAIL-18修复)
+    warmup_days: int = 5
+    max_line_bytes: int = 4096
+    rotate_by_date: bool = True
+    # 纸带(评审FAIL-16修复: 含崩溃恢复)
+    orphan_draft_hours: int = 48        # 覆盖周五->周一跨周末窗口
+
+    def __post_init__(self):
+        assert self.yellow_to_green_days >= 1
+        assert self.orange_to_yellow_days >= 1
+        assert self.warmup_days >= 3
+
+
+ETF_MOMENTUM = EtfMomentumConfig()
+FUSION = FusionConfig()
+DDR = DdrConfig()
+DEGRADATION = DegradationConfig()
+
 # ═══════════════════════════════════════════════════════════════
 # 打字机归因 — 运行时动态参数切换
 # ═══════════════════════════════════════════════════════════════
@@ -153,7 +256,7 @@ _PARAMS_META = {
     "max_hold_days":    {"lo": 5,     "hi": 60,    "step": 5,    "int": True},
     "position_size":    {"lo": 0.05,  "hi": 0.25,  "step": 0.01, "int": False},
     "soft_min_score":   {"lo": 48,    "hi": 80,    "step": 2,    "int": True},
-    "bullish_threshold":{"lo": 45,    "hi": 70,    "step": 5,    "int": True},
+    # 🔒 bullish_threshold 不参与动态优化（L0≥60 固定开仓线）
 }
 
 # 参数名 → Config 类映射（run_live.py 快照等外部调用需要）
@@ -161,7 +264,7 @@ _PARAM_TO_CONFIG = {
     "max_hold_days":     "EXIT",
     "position_size":     "RISK",
     "soft_min_score":    "ENTRY",
-    "bullish_threshold": "MARKET",
+    # 🔒 bullish_threshold 不参与动态优化
 }
 
 

@@ -515,6 +515,12 @@ def section_executive_summary(l0_info: dict, positions: dict,
         f'    </div>',
         f'  </div>',
         f'</div>',
+        # 数据质量警告
+        (f'<div style="margin-top:8px;padding:8px 12px;background:#fef2f2;border-radius:6px;'
+         f'border:1px solid #fecaca;font-size:13px;color:#991b1b">'
+         f'⚠️ 数据不完整（覆盖率 {l0_info.get("_covered_stocks", "?")}/'
+         f'{l0_info.get("_total_stocks", "?")}），L0 评分仅供参考</div>'
+         if l0_info.get("_data_quality") == "UNRELIABLE" else ""),
         # 概览卡片
         f'<div class="grid-2" style="margin-top:12px">',
         f'  <div class="grid-4" style="grid-column:1">',
@@ -1263,6 +1269,31 @@ def section_appendix(l0_info: dict, attribution: dict,
 </div>"""
 
 
+# ── 覆盖率检查辅助函数 ──
+
+def _coverage_pct(date: str) -> float:
+    """计算 daily_bars 中指定日期的数据覆盖率。"""
+    try:
+        from data.local.warehouse import LocalDataWarehouse
+        wh = LocalDataWarehouse()
+        total = len(wh.get_stock_list(status="active"))
+        if total == 0:
+            return 0.0
+        import pandas as pd
+        conn = wh._connect()
+        try:
+            df = pd.read_sql(
+                "SELECT COUNT(DISTINCT symbol) as cnt FROM daily_bars WHERE date = ?",
+                conn, params=(date,)
+            )
+            covered = int(df["cnt"].iloc[0]) if not df.empty else 0
+        finally:
+            conn.close()
+        return covered / total
+    except Exception:
+        return -1.0  # 无法判断
+
+
 # ── 主函数 ──
 
 def generate_html(date: str) -> str:
@@ -1277,6 +1308,13 @@ def generate_html(date: str) -> str:
             return ""
 
     logger.info(f"生成 HTML 日报: {date}")
+
+    # 覆盖率检查：低于 30% 时跳过生成
+    cov = _coverage_pct(date)
+    if 0 <= cov < 0.3:
+        logger.warning(f"数据覆盖率仅 {cov:.1%}（< 30%），跳过日报生成")
+        return ""
+    data_quality = "normal" if cov >= 0.5 else "unreliable"
 
     # 1. 运行引擎获取当日数据
     engine = BacktestEngine()
@@ -1427,6 +1465,12 @@ def generate_intraday_html(date: str, skip_l2: bool = False) -> str:
         if date not in set(_tdf["date"].tolist()):
             logger.warning(f"非交易日 {date}")
             return ""
+
+    # 覆盖率检查：低于 30% 时跳过生成
+    cov = _coverage_pct(date)
+    if 0 <= cov < 0.3:
+        logger.warning(f"数据覆盖率仅 {cov:.1%}（< 30%），跳过盘中初稿生成")
+        return ""
 
     # 1. 读取持仓快照
     snapshot_path = _P("outputs/position_snapshot.parquet")

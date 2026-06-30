@@ -7,7 +7,7 @@ import numpy as np
 import sniper.config as CFG
 from sniper.data_router import DataRouter
 from sniper.layers.l0_market import MarketScorer
-from sniper.layers.l1_sector import SectorScorer
+from sniper.layers.l1_sector import SectorScorer, FusionOrchestrator
 from sniper.layers.l2_stock import StockScorer
 from sniper.layers.l3_entry import EntryFilter
 from sniper.layers.l4_exit import ExitChain
@@ -50,6 +50,7 @@ class BacktestEngine:
         self.router = router or DataRouter()
         self.market = MarketScorer(self.router)
         self.sector = SectorScorer(self.router)
+        self.fusion = FusionOrchestrator(self.router)  # ETF融合编排器(新增)
         self.stock_scorer = StockScorer(self.router)
         self.entry = EntryFilter(self.router)
         self.exit_chain = ExitChain(self.router)
@@ -62,6 +63,9 @@ class BacktestEngine:
         self._l1_df_cache: dict[str, pd.DataFrame] = {}  # 板块全量评分缓存（分层 Top N 用）
         # 日线内存缓存 {symbol: DataFrame}
         self._bars_cache: dict[str, pd.DataFrame] = {}
+
+        # 预计算标志
+        self._etf_precomputed: bool = False
 
         # ── 动态配置回调（策略对比用）──
         self._daily_config_callback = None
@@ -89,7 +93,11 @@ class BacktestEngine:
             if date not in self._l1_cache:
                 self._l1_cache[date] = self.sector.top_sectors(date)
             if date not in self._l1_df_cache:
-                self._l1_df_cache[date] = self.sector.composite_scores(date)
+                sw2_names = self.sector.top_sw2_sectors(date, single_layer=True)
+                if sw2_names:
+                    self._l1_df_cache[date] = pd.DataFrame({"industry_name": sw2_names})
+                else:
+                    self._l1_df_cache[date] = pd.DataFrame()
         logger.info(f"L0/L1 预计算完成: L0={len(self._l0_cache)} 天, L1={len(self._l1_cache)} 天")
 
     def _preload_bars_cache(self, symbols: list[str]):
@@ -299,7 +307,8 @@ class BacktestEngine:
             use_precomputed: bool = True,
             l0_cache: dict | None = None,
             l1_cache: dict | None = None,
-            l1_full_cache: dict | None = None) -> dict:
+            l1_full_cache: dict | None = None,
+            etf_fusion: bool = True) -> dict:
         """运行回测。
 
         Args:
@@ -311,6 +320,7 @@ class BacktestEngine:
             l0_cache: 外部预计算的 L0 缓存（多进程优化用）
             l1_cache: 外部预计算的 L1 缓存
             l1_full_cache: 外部预计算的 L1 全量 DataFrame 缓存
+            etf_fusion: 是否启用ETF动量融合(默认True, 设False可做AB对比)
         """
         start_date = start_date or CFG.BACKTEST.start_date
         end_date = end_date or CFG.BACKTEST.end_date
@@ -332,6 +342,11 @@ class BacktestEngine:
         dates = sorted(cal["date"].tolist())
         logger.info(f"回测区间: {dates[0]} ~ {dates[-1]}, {len(dates)} 交易日")
 
+        # ── 配置ETF融合 ──
+        if not etf_fusion:
+            self.fusion.pure_sw1_mode = True
+            logger.info("[ETF] AB对比模式: pure_sw1_mode=True, 跳过ETF融合")
+
         # ── 预计算 L0/L1（支持外部缓存注入，多进程优化用）──
         if l0_cache is not None:
             self._l0_cache = l0_cache
@@ -340,6 +355,15 @@ class BacktestEngine:
             logger.info(f"[缓存] 使用外部 L0/L1 缓存: L0={len(l0_cache)} 天")
         else:
             self._precompute_l0_l1(dates)
+
+        # ── 预计算 ETF 信号（回测模式, 保证 T-1 时序）──
+        if etf_fusion and not self._etf_precomputed:
+            try:
+                self.fusion.precompute_etf_signal(dates)
+                self._etf_precomputed = True
+                logger.info(f"[ETF] 信号预计算完成: {len(dates)} 天")
+            except Exception as e:
+                logger.warning(f"[ETF] 信号预计算失败(降级纯SW1): {e}")
 
         # ── 预计算 L2 因子缓存（一次性加载全部因子到内存）──
         if use_precomputed:
@@ -481,12 +505,17 @@ class BacktestEngine:
 
             # ── L2 + L3 入场（L0 ≥ bullish_threshold=64 时开新仓）──
             if l0_score >= CFG.MARKET.bullish_threshold and self.risk.can_open_new():
-                # 板块统一取前3（2026-06-06 Strategy A: top_n_high=top_n_low=3）
-                actual_top_n = CFG.SECTOR.top_n_high
-                df = self._l1_df_cache.get(prev_date)
-                if df is None or (isinstance(df, pd.DataFrame) and df.empty):
-                    df = self.sector.composite_scores(prev_date)
-                top_sectors = df.head(actual_top_n)["industry_name"].tolist() if not df.empty else []
+                # 板块选择: ETF融合模式 vs 纯SW1模式
+                if etf_fusion and not self.fusion.pure_sw1_mode:
+                    top_sectors = self.fusion.top_sectors(
+                        prev_date, top_n=CFG.SECTOR.top_n_high, l0_score=l0_score)
+                else:
+                    actual_top_n = CFG.SECTOR.top_n_high
+                    df = self._l1_df_cache.get(prev_date)
+                    if df is None or (isinstance(df, pd.DataFrame) and df.empty):
+                        df = self.sector.composite_scores(prev_date)
+                    top_sectors = df.head(actual_top_n)["industry_name"].tolist() if not df.empty else []
+
                 if not top_sectors:
                     self.daily_logs.append({"date": current_date, "action": "无板块"})
                     self.risk.daily_report(current_date)

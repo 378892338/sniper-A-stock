@@ -54,7 +54,7 @@ class MootdxSource(DataSource):
                     from mootdx.quotes import Quotes
 
                     client = Quotes.factory(
-                        market="std", timeout=15, heartbeat=False, bestip=False,
+                        market="std", timeout=15, heartbeat=True, bestip=False,
                     )
                     self._instances["std"] = client
         return self._instances["std"]

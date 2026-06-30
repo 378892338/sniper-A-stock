@@ -105,6 +105,18 @@ class DataRouter:
     def get_industry_compare_range(self, start: str, end: str) -> pd.DataFrame:
         return self.sig.get_industry_compare_range(start, end)
 
+    def get_industry_compare_sw1(self, date: str) -> pd.DataFrame:
+        return self.sig.get_industry_compare_sw1(date)
+
+    def get_industry_compare_sw2(self, date: str) -> pd.DataFrame:
+        return self.sig.get_industry_compare_sw2(date)
+
+    def get_industry_compare_sw1_range(self, start: str, end: str) -> pd.DataFrame:
+        return self.sig.get_industry_compare_sw1_range(start, end)
+
+    def get_industry_compare_sw2_range(self, start: str, end: str) -> pd.DataFrame:
+        return self.sig.get_industry_compare_sw2_range(start, end)
+
     def get_hot_stocks(self, date: str) -> pd.DataFrame:
         """获取某日强势股/题材。"""
         return self.sig.get_hot_stocks(date)
@@ -125,6 +137,53 @@ class DataRouter:
 
     def get_latest_quarterly_batch(self, symbols: list[str], as_of: str) -> pd.DataFrame:
         return self.sig.get_latest_quarterly_batch(symbols, as_of)
+
+    # ── ETF 数据接口 — 新增(L0.5 ETF动量层) ──
+
+    def get_etf_daily(self, etf_name: str, start: str = "", end: str = "") -> pd.DataFrame:
+        """获取单个ETF分类指数日线。
+
+        委托给 data/index_etf.py, 数据缓存在外部。
+        返回 DataFrame[date, open, high, low, close, volume], 空时表示数据不可达。
+        """
+        from data.index_etf import fetch_etf_index_data
+        df = fetch_etf_index_data(etf_name, start or "2000-01-01", end or "2099-12-31")
+        if df.empty or "close" not in df.columns:
+            return pd.DataFrame()
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"]).astype(str)
+        return df
+
+    def get_etf_daily_batch(self, etf_names: list[str] | None = None,
+                            start: str = "", end: str = "") -> dict[str, pd.DataFrame]:
+        """批量获取多个ETF分类指数日线。
+
+        使用已有线程池并发获取, 单个失败不影响其他。
+        Returns: {etf_name: DataFrame} — 获取失败的ETF不在dict中
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from data.index_etf import ETF_INDEX_MAP
+
+        if etf_names is None:
+            etf_names = list(ETF_INDEX_MAP.keys())
+
+        result: dict[str, pd.DataFrame] = {}
+        max_workers = min(8, len(etf_names))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(self.get_etf_daily, name, start, end): name
+                for name in etf_names
+            }
+            for future in as_completed(future_map):
+                name = future_map[future]
+                try:
+                    df = future.result(timeout=30)
+                    if not df.empty:
+                        result[name] = df
+                except Exception as e:
+                    logger.warning(f"ETF[{name}] 获取失败: {e}")
+        logger.info(f"ETF数据: 成功{len(result)}/{len(etf_names)}")
+        return result
 
     # ── 交易日工具 ──
 

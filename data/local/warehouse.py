@@ -94,6 +94,7 @@ class LocalDataWarehouse:
                 df2["date"] = df2["date"].astype(str).str[:10]
         conn = self._connect()
         try:
+            conn.execute("BEGIN")  # Fix C: 显式事务防止崩溃时部分写入
             if if_exists == "append":
                 cols = ", ".join(f'"{c}"' for c in df2.columns)
                 ph = ", ".join("?" for _ in df2.columns)
@@ -107,6 +108,7 @@ class LocalDataWarehouse:
             conn.commit()
             logger.info(f"个股日线写入: {len(df)} 行")
         except Exception:
+            conn.rollback()
             logger.exception(f"个股日线写入失败")
             raise
         finally:
@@ -131,7 +133,14 @@ class LocalDataWarehouse:
             conn.close()
 
     def get_last_date(self, table: str, filter_col: str, filter_val: str) -> str | None:
-        """查询某表的某个维度（股票/指数代码）的最后日期。"""
+        """查询某表的某个维度（股票/指数代码）的最后日期。
+
+        Fix L: filter_col 白名单校验，防 SQL 注入。
+        """
+        # 白名单：已知合法列名
+        _ALLOWED_COLS = {"symbol", "date", "code", "index_code"}
+        if filter_col not in _ALLOWED_COLS:
+            raise ValueError(f"filter_col '{filter_col}' 不在白名单 {_ALLOWED_COLS} 中")
         conn = self._connect()
         try:
             cur = conn.execute(

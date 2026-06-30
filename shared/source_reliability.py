@@ -116,6 +116,25 @@ class StockSkipTracker:
         with self._lock:
             return self._fail_counts.get(symbol, 0)
 
+    def prune_expired(self) -> int:
+        """批量扫描全部 skip_set，清空已过 TTL 条目。返回清理数。
+
+        与 should_skip() 的逐个过期互补（批量 vs 按需）。
+        在 preflight_cleanup() 中调用，确保下次管线运行前跳过列表干净。
+        """
+        with self._lock:
+            now = time.time()
+            expired = [
+                sym for sym, ts in self._skip_set.items()
+                if now - ts > self.skip_ttl
+            ]
+            for sym in expired:
+                del self._skip_set[sym]
+                self._fail_counts.pop(sym, None)
+            if expired:
+                self._save()
+            return len(expired)
+
     # ── 持久化 ──
 
     def _load(self) -> None:

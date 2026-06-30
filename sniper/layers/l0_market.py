@@ -121,7 +121,7 @@ class MarketScorer:
         return self.score_all(date)["composite"]
 
     def score_all(self, date: str) -> dict:
-        """返回合成分 + 各子维度评分（打字机用）。"""
+        """返回合成分 + 各子维度评分 + 数据质量标记。"""
         scores = {}
         scores["trend"] = self.score_trend(date)
         scores["volume"] = self.score_volume(date)
@@ -136,10 +136,34 @@ class MarketScorer:
         )
         scores["composite"] = composite
 
+        # 数据质量标记：检测 breadth 计算使用的股票覆盖率
+        # 当 daily_bars 覆盖率不足 50% 时，L0 合成不可靠
+        try:
+            from data.local.warehouse import LocalDataWarehouse
+            conn = LocalDataWarehouse()._connect()
+            import pandas as _pd
+            total = _pd.read_sql("SELECT COUNT(*) as c FROM stock_list WHERE status='active'", conn)
+            covered = _pd.read_sql(
+                "SELECT COUNT(DISTINCT symbol) as c FROM daily_bars WHERE date=?",
+                conn, params=(date,),
+            )
+            conn.close()
+            t = int(total["c"].iloc[0]) if not total.empty else 0
+            c = int(covered["c"].iloc[0]) if not covered.empty else 0
+            scores["_total_stocks"] = t
+            scores["_covered_stocks"] = c
+            if t > 0 and c / t < 0.5:
+                scores["_data_quality"] = "UNRELIABLE"
+            else:
+                scores["_data_quality"] = "OK"
+        except Exception:
+            scores["_data_quality"] = "UNKNOWN"
+
         logger.info(
             f"L0 {date}: 趋势={scores['trend']:.1f} 量能={scores['volume']:.1f} "
             f"宽度={scores['breadth']:.1f} 北向={scores['northbound']:.1f} "
-            f"合成={composite:.1f}"
+            f"合成={composite:.1f} "
+            f"数据质量={scores['_data_quality']}"
         )
         return scores
 

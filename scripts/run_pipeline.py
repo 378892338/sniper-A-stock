@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import datetime as dt
 import json
 import os
+import threading
 import time as _time
 
 from core.logger import get_logger
@@ -93,10 +94,13 @@ def _save_last_run(date: str, mode: str = "full"):
         except Exception:
             pass
     data[mode] = date
-    LAST_RUN_FILE.write_text(
+    # 原子写入：先写 .tmp 再 rename，防止崩溃时截断
+    tmp = LAST_RUN_FILE.with_suffix(".json.tmp")
+    tmp.write_text(
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    tmp.replace(LAST_RUN_FILE)
 
 
 def _get_missing_dates(last_date: str, today: str) -> list[str]:
@@ -154,8 +158,8 @@ def _verify_daily_bars_coverage(wh, today: str) -> bool:
         finally:
             conn.close()
     except Exception as e:
-        logger.warning(f"[①] daily_bars 覆盖验证异常（跳过验证）: {e}")
-        return True  # 异常时不阻断，让管道继续
+        logger.warning(f"[①] daily_bars 覆盖验证异常: {e}")
+        return False  # 异常时保守降级
 
 
 def _verify_index_coverage(wh, today: str) -> bool:
@@ -186,8 +190,8 @@ def _verify_index_coverage(wh, today: str) -> bool:
         finally:
             conn.close()
     except Exception as e:
-        logger.warning(f"[①] index_daily 覆盖验证异常（跳过验证）: {e}")
-        return True  # 异常时不阻断
+        logger.warning(f"[①] index_daily 覆盖验证异常: {e}")
+        return False  # 异常时保守降级
 
 
 def _get_active_stock_count() -> int:
@@ -405,120 +409,144 @@ def _run_single_day(date: str) -> bool:
     """执行一天的完整链路。返回是否成功。"""
     today = dt.date.today().strftime("%Y-%m-%d")
 
-    logger.info(f"{'='*50}")
-    logger.info(f"全链路运行: {date}")
-    logger.info(f"{'='*50}")
+    # ── 全局管线锁（防多进程并发）──
+    if not _acquire_pipeline_lock():
+        logger.warning(f"[pipeline] 另一个全量管道正在运行，跳过 {date}")
+        return False
 
-    # 并发守卫：全量管道检测盘中锁
-    _intraday_lock = Path("outputs/.intraday.lock")
-    if _intraday_lock.exists():
-        logger.warning("[①] 盘中管道仍在运行，等待至多 5 分钟...")
-        for _ in range(30):
-            if not _intraday_lock.exists():
-                break
-            _time.sleep(10)
+    # ── 心跳线程：每 5 分钟更新 pipeline.lock mtime ──
+    _heartbeat_stop = threading.Event()
+
+    def _heartbeat_loop():
+        while not _heartbeat_stop.is_set():
+            _update_pipeline_lock_heartbeat()
+            _heartbeat_stop.wait(300)  # 5 分钟
+
+    _heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+    _heartbeat_thread.start()
+
+    try:
+        # ── 运行前冲洗：清理残留 temp + 过期 skip_list ──
+        _preflight_cleanup()
+
+        logger.info(f"{'='*50}")
+        logger.info(f"全链路运行: {date}")
+        logger.info(f"{'='*50}")
+
+        # 并发守卫：全量管道检测盘中锁
+        _intraday_lock = Path("outputs/.intraday.lock")
         if _intraday_lock.exists():
-            logger.warning("[①] 等待超时，盘中锁仍存在，强制继续全量管道")
+            logger.warning("[①] 盘中管道仍在运行，等待至多 5 分钟...")
+            for _ in range(30):
+                if not _intraday_lock.exists():
+                    break
+                _time.sleep(10)
+            if _intraday_lock.exists():
+                logger.warning("[①] 等待超时，盘中锁仍存在，强制继续全量管道")
 
-    # ① 数据新鲜度校验 — 智能同步（覆盖率状态机 + 个股跳过）
-    if date == today:
-        from shared.source_reliability import CoverageState, StockSkipTracker
-        coverage_state = CoverageState()
-        skip_tracker = StockSkipTracker()
+        # ① 数据新鲜度校验 — 智能同步（覆盖率状态机 + 个股跳过）
+        if date == today:
+            from shared.source_reliability import CoverageState, StockSkipTracker
+            coverage_state = CoverageState()
+            skip_tracker = StockSkipTracker()
 
-        while True:
-            status = _sync_with_intelligence(today, coverage_state, skip_tracker)
-            if status == "ok":
-                logger.info(f"[①] 数据同步完成（覆盖率 {coverage_state.best_coverage:.1%}）")
-                break
-            if status == "degraded":
-                logger.warning(
-                    f"[①] 数据同步降级（覆盖率 {coverage_state.best_coverage:.1%}），"
-                    f"使用现有数据生成日报"
-                )
-                break
-            if status == "failed":
-                logger.warning(
-                    "[①] 所有数据源不可用，继续使用现有数据生成日报"
-                )
-                break
-            # status == "syncing" → 继续下一轮
+            while True:
+                status = _sync_with_intelligence(today, coverage_state, skip_tracker)
+                if status == "ok":
+                    logger.info(f"[①] 数据同步完成（覆盖率 {coverage_state.best_coverage:.1%}）")
+                    break
+                if status == "degraded":
+                    logger.warning(
+                        f"[①] 数据同步降级（覆盖率 {coverage_state.best_coverage:.1%}），"
+                        f"使用现有数据生成日报"
+                    )
+                    break
+                if status == "failed":
+                    logger.warning(
+                        "[①] 所有数据源不可用，继续使用现有数据生成日报"
+                    )
+                    break
+                # status == "syncing" → 继续下一轮
 
-    # ①.5 更新估值数据（腾讯实时行情，try/except 不卡流程）
-    logger.info(f"[①.⑤/⑦] 更新估值数据...")
-    try:
-        from scripts.update_valuation import update_valuation
-        ok = update_valuation()
-        if ok:
-            logger.info("估值数据更新成功")
-        else:
-            logger.warning("估值数据更新被跳过（校验未通过或数据为空）")
-    except Exception as e:
-        logger.warning(f"估值数据更新异常（继续后续步骤）: {e}")
+        # ①.5 更新估值数据（腾讯实时行情，try/except 不卡流程）
+        logger.info(f"[①.⑤/⑦] 更新估值数据...")
+        try:
+            from scripts.update_valuation import update_valuation
+            ok = update_valuation()
+            if ok:
+                logger.info("估值数据更新成功")
+            else:
+                logger.warning("估值数据更新被跳过（校验未通过或数据为空）")
+        except Exception as e:
+            logger.warning(f"估值数据更新异常（继续后续步骤）: {e}")
 
-    # ② 刷新信号表（5张表增量补缺，全部0滞后）
-    logger.info(f"[②/⑦] 刷新信号表...")
-    try:
-        refresh_signal_tables(date)
-    except Exception as e:
-        logger.warning(f"信号表刷新部分失败（继续生成日报）: {e}")
+        # ② 刷新信号表（5张表增量补缺，全部0滞后）
+        logger.info(f"[②/⑦] 刷新信号表...")
+        try:
+            refresh_signal_tables(date)
+        except Exception as e:
+            logger.warning(f"信号表刷新部分失败（继续生成日报）: {e}")
 
-    # ③ L2 预计算 — 数据已就绪，阻塞执行，失败则终止当天
-    logger.info(f"[③/⑦] 预计算 L2 因子...")
-    try:
-        from scripts.precompute_l2 import precompute_all
-        precompute_all(end=date)
-        logger.info(f"[③] L2预计算完成")
-    except Exception as e:
-        logger.error(f"[③] L2预计算失败: {e}")
-        return False
+        # ③ L2 预计算 — 数据已就绪，阻塞执行，失败则终止当天
+        logger.info(f"[③/⑦] 预计算 L2 因子...")
+        try:
+            from scripts.precompute_l2 import precompute_all
+            precompute_all(end=date)
+            logger.info(f"[③] L2预计算完成")
+        except Exception as e:
+            logger.error(f"[③] L2预计算失败: {e}")
+            return False
 
-    # ④ 跑 day strategy（L0 → configure → trade → append tape）
-    logger.info(f"[④/⑦] 运行策略...")
-    try:
-        from scripts.run_live import daily_run
-        daily_run(date)
-    except Exception as e:
-        logger.error(f"[④] 策略运行失败: {e}")
-        return False
+        # ④ 跑 day strategy（L0 → configure → trade → append tape）
+        logger.info(f"[④/⑦] 运行策略...")
+        try:
+            from scripts.run_live import daily_run
+            daily_run(date)
+        except Exception as e:
+            logger.error(f"[④] 策略运行失败: {e}")
+            return False
 
-    # ⑤ 生成日报（HTML + Markdown + 更新 Obsidian 索引）
-    logger.info(f"[⑤/⑦] 生成日报...")
-    from scripts.daily_report_html import generate_html, _generate_md
-    try:
-        html = generate_html(date)
-        if not html:
-            logger.warning(f"非交易日 {date}，跳过写入")
-            _save_last_run(date)
-            return True
-    except Exception as e:
-        logger.error(f"[⑤] 日报生成失败: {e}")
-        return False
+        # ⑤ 生成日报（HTML + Markdown + 更新 Obsidian 索引）
+        logger.info(f"[⑤/⑦] 生成日报...")
+        from scripts.daily_report_html import generate_html, _generate_md
+        try:
+            html = generate_html(date)
+            if not html:
+                logger.warning(f"非交易日 {date}，跳过写入")
+                _save_last_run(date)
+                return True
+        except Exception as e:
+            logger.error(f"[⑤] 日报生成失败: {e}")
+            return False
 
-    md_content = _generate_md(date)
+        md_content = _generate_md(date)
 
-    # ⑥ 写入 Obsidian
-    logger.info(f"[⑥/⑦] 写入 Obsidian...")
-    OBSIDIAN_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        html_path = OBSIDIAN_DIR / f"量化日报_{date}.html"
-        html_path.write_text(html, encoding="utf-8")
-        md_path = OBSIDIAN_DIR / f"量化日报-{date}.md"
-        md_path.write_text(md_content, encoding="utf-8")
-        logger.info(f"日报已写入: {html_path}")
+        # ⑥ 写入 Obsidian
+        logger.info(f"[⑥/⑦] 写入 Obsidian...")
+        OBSIDIAN_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            html_path = OBSIDIAN_DIR / f"量化日报_{date}.html"
+            html_path.write_text(html, encoding="utf-8")
+            md_path = OBSIDIAN_DIR / f"量化日报-{date}.md"
+            md_path.write_text(md_content, encoding="utf-8")
+            logger.info(f"日报已写入: {html_path}")
 
-        from scripts.daily_report_html import _update_obsidian_index
-        _update_obsidian_index(OBSIDIAN_DIR, date, html_path, md_path)
-        logger.info(f"索引已更新")
-    except Exception as e:
-        logger.warning(f"写入 Obsidian 失败（html 已生成不阻断）: {e}")
+            from scripts.daily_report_html import _update_obsidian_index
+            _update_obsidian_index(OBSIDIAN_DIR, date, html_path, md_path)
+            logger.info(f"索引已更新")
+        except Exception as e:
+            logger.warning(f"写入 Obsidian 失败（html 已生成不阻断）: {e}")
 
-    # ⑦ 同步到 quant-server
-    _sync_to_server(date, html)
+        # ⑦ 同步到 quant-server
+        _sync_to_server(date, html)
 
-    _save_last_run(date)
-    logger.info(f"全链路完成: {date}")
-    return True
+        _save_last_run(date)
+        logger.info(f"全链路完成: {date}")
+        return True
+
+    finally:
+        _heartbeat_stop.set()
+        _postrun_flush()
 
 
 def run_pipeline(target_date: str | None = None) -> bool:
@@ -606,6 +634,116 @@ def _update_lock_heartbeat():
 def _release_intraday_lock():
     try:
         _LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════
+# 全局管线锁（防多进程并发）
+# ═══════════════════════════════════════════
+
+_PIPELINE_LOCK_FILE = Path("outputs/.pipeline.lock")
+
+
+def _acquire_pipeline_lock() -> bool:
+    """获取全局管线锁，防止多进程并发运行全量管道。
+
+    与 intraday lock 不同：
+      - 获取失败则 return False，不等待（全量管线可能跑数小时）
+      - 僵死检测：读 PID → tasklist 检查 → 不在了自动清理
+
+    Returns:
+        True 获取成功 / False 另一个全量管线正在运行
+    """
+    import os as _os
+    import subprocess as _sp
+
+    _PIPELINE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if _PIPELINE_LOCK_FILE.exists():
+        try:
+            stale_pid = int(_PIPELINE_LOCK_FILE.read_text().strip().split()[0])
+            result = _sp.run(
+                ["tasklist", "/FI", f"PID eq {stale_pid}"],
+                capture_output=True, text=True,
+            )
+            if str(stale_pid) in result.stdout:
+                logger.warning(f"[pipeline] 前序管道 PID={stale_pid} 仍在运行，跳过本次调度")
+                return False
+            # PID 不在运行 → 锁已僵死
+            logger.info(f"[pipeline] 清理僵死锁 (PID={stale_pid})")
+        except Exception:
+            pass
+    _PIPELINE_LOCK_FILE.write_text(f"{_os.getpid()} {_time.time()}")
+    logger.debug(f"[pipeline] 获取锁 (PID={_os.getpid()})")
+    return True
+
+
+def _release_pipeline_lock():
+    try:
+        _PIPELINE_LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _update_pipeline_lock_heartbeat():
+    """更新 pipeline.lock mtime 作为心跳。
+
+    serve_report 通过检查此 mtime 判断管道是否向前推进。
+    超过 15 分钟无更新则认为管道挂死。
+    """
+    import os as _os
+    try:
+        _os.utime(_PIPELINE_LOCK_FILE, None)
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════
+# preflight / postrun — 运行前冲洗 + 运行后排水
+# ═══════════════════════════════════════════
+
+
+def _preflight_cleanup():
+    """运行前冲洗：清理上次可能遗留的零时文件和过期跳过记录。
+
+    所有操作包在 try/except 中，不阻断主线运行。
+    必须在持有 pipeline.lock 之后调用，防竞态。
+    """
+    # 1. 清理 outputs 下所有游离 .tmp 文件
+    try:
+        tmp_files = list(Path("outputs").rglob("*.tmp"))
+        for f in tmp_files:
+            try:
+                f.unlink()
+                logger.debug(f"[preflight] 清理临时文件: {f}")
+            except OSError:
+                pass
+        if tmp_files:
+            logger.info(f"[preflight] 已清理 {len(tmp_files)} 个临时文件")
+    except Exception as e:
+        logger.warning(f"[preflight] 临时文件清理异常（不阻断）: {e}")
+
+    # 2. skip_list 批量过期
+    try:
+        from shared.source_reliability import StockSkipTracker
+        skip = StockSkipTracker()
+        n = skip.prune_expired()
+        if n:
+            logger.info(f"[preflight] 跳过列表已过期 {n} 只股票")
+    except Exception as e:
+        logger.warning(f"[preflight] skip_list 清理异常（不阻断）: {e}")
+
+
+def _postrun_flush():
+    """运行后排水：释放锁 + 清理临时文件。"""
+    _release_pipeline_lock()
+    # 清理本运行产出的 .tmp 文件（再次扫，优先清理 outputs/reports/ 下的）
+    try:
+        for f in Path("outputs/reports").rglob("*.tmp"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
     except Exception:
         pass
 

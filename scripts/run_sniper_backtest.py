@@ -170,7 +170,7 @@ def precompute_parallel(dates, max_workers=None):
     top_sectors_map: dict[str, list[str]] = {}
     t1 = time.time()
     for i, date in enumerate(dates):
-        sectors = sector_scorer.top_sectors(date)
+        sectors = sector_scorer.top_sw2_sectors(date, single_layer=True)
         if sectors:
             top_sectors_map[date] = sectors
         if (i + 1) % 50 == 0:

@@ -160,12 +160,58 @@ def _probe_source_health(symbol: str, start: str, end: str):
         logger.warning("  所有数据源均不可用！")
 
 
+def _pick_validate_source(exclude_primary: str = "jqdata") -> str:
+    """从 DATA_SOURCE_PREFERENCE 中选取与主源不同栈的验证源。
+
+    排除主源（默认 jqdata）及其同栈源，确保交叉验证来自独立数据链路。
+    """
+    import random as _random
+    from config.settings import DATA_SOURCE_PREFERENCE
+    from shared.retry import health_tracker
+
+    # 同栈分组：同栈源的验证结果不独立
+    SAME_STACK = {
+        "jqdata": ["jqdata", "akshare", "akshare_daily"],
+        "eastmoney": ["eastmoney", "sina"],
+        "10jqka": ["10jqka"],
+        "tushare": ["tushare"],
+        "baostock": ["baostock"],
+        "mootdx": ["mootdx"],
+    }
+    # 找到主源所在栈
+    primary_stack = set()
+    for stack, members in SAME_STACK.items():
+        if exclude_primary in members:
+            primary_stack = set(members)
+            break
+    if not primary_stack:
+        primary_stack = {exclude_primary}
+
+    # 剩余可用源中排除主源同栈 + 排除健康检查不可用的
+    candidates = []
+    for src in DATA_SOURCE_PREFERENCE:
+        if src in primary_stack:
+            continue
+        ep = {"jqdata": "jqdata_price", "akshare": "akshare_price",
+              "akshare_daily": "akshare_daily_price", "sina": "sina_price",
+              "10jqka": "10jqka_price", "tushare": "tushare_price",
+              "baostock": "baostock_price", "eastmoney": "eastmoney_price",
+              "mootdx": "mootdx_price"}.get(src)
+        if ep and not health_tracker.is_available(ep):
+            continue
+        candidates.append(src)
+
+    if not candidates:
+        candidates = ["sina", "10jqka", "tushare"]  # 最终 fallback
+    return _random.choice(candidates)
+
+
 def _cross_validate_sample(symbols: list[str], start: str, end: str, warehouse, n: int = 50):
     """从已入库股票中随机抽样，用非主源做 close 价格交叉验证。
 
     设计约束：
       - 只抽样 n 只，不扫全量（控制耗时）
-      - 校验源从 [sina, akshare] 随机选择（与主源 jqdata 不同栈）
+      - 校验源从 DATA_SOURCE_PREFERENCE 动态选取（与主源不同栈）
       - 只比 close，不比 volume（不同源 volume 口径天然不同）
       - 不阻断管道，仅记录 WARNING
 
@@ -176,9 +222,7 @@ def _cross_validate_sample(symbols: list[str], start: str, end: str, warehouse, 
     from data.normalizer import normalize
     from shared.retry import health_tracker
 
-    # 选校验源：sina 或 akshare 随机，排除当前主源 jqdata
-    candidates = ["sina", "akshare"]
-    validate_src = _random.choice(candidates)
+    validate_src = _pick_validate_source("jqdata")
 
     sample = _random.sample(symbols, min(n, len(symbols)))
     n_sample = len(sample)
@@ -279,6 +323,12 @@ def _fetch_failed_with_fetcher(
     # 1) 健康预探测（保持原逻辑）
     _probe_source_health("600436", start, end)
 
+    # Fix O: 非交易日提醒（不阻断，因为可能需要补历史数据）
+    if not warehouse.is_trading_day(end):
+        logger.info(f"  {end} 非交易日，跳过日线增量更新")
+        if stock_starts is None or not any(ss < end for ss in stock_starts.values()):
+            return 0, {}
+
     # 2) 初始化 Journal + StreamEngine
     journal = PipelineJournal()
     if run_id is None:
@@ -299,18 +349,37 @@ def _fetch_failed_with_fetcher(
         verify_max=200,
     )
 
-    # B-CRIT-05: 统一降级链（不按股票独立选源）
+    # B-CRIT-05: 统一降级链（Fix G: 共享 Fetcher 实例，consecutive_failures 跨股票累积）
+    _shared_fetcher = Fetcher(guard=_low_delay_guard)
+
     def _fetch_one(sym: str) -> pd.DataFrame:
-        if stock_starts and sym in stock_starts:
-            fstart = stock_starts[sym]
-        else:
-            fstart = start
+        # Fix A: 增量下载 — 查已有最大日期，只取缺失区间
         try:
-            fetcher = Fetcher(guard=_low_delay_guard)
-            df = fetcher.fetch_stock_daily(sym, fstart, end)
+            last = warehouse.get_last_date("daily_bars", "symbol", sym)
+        except Exception:
+            last = None
+        if last and last >= end:
+            return pd.DataFrame()  # 已最新，跳过
+        fstart = stock_starts.get(sym, start) if stock_starts else start
+        if last and last > fstart:
+            fstart = last  # 只下载缺失区间
+        try:
+            df = _shared_fetcher.fetch_stock_daily(sym, fstart, end)
             if df is not None and not df.empty:
                 if "symbol" not in df.columns:
                     df = df.assign(symbol=sym)
+                # Fix P: 空洞检测 — 检查日期连续性
+                date_col = "date" if "date" in df.columns else None
+                if date_col and len(df) > 1:
+                    dates_sorted = sorted(df[date_col].dropna().unique())
+                    if len(dates_sorted) > 1:
+                        import pandas as _pd
+                        gaps = pd.to_datetime(dates_sorted).to_series().diff().dt.days
+                        large_gaps = gaps[gaps > 5]
+                        if not large_gaps.empty:
+                            logger.warning(
+                                f"  {sym} 数据空洞检测: {len(large_gaps)} 处缺口>5交易日"
+                            )
                 return df
         except Exception as e:
             logger.debug(f"  {sym}: {e}")
@@ -350,11 +419,11 @@ def _fetch_failed_with_fetcher(
 def _cross_validate_stock(sym: str, df: pd.DataFrame,
                           warehouse, start: str, end: str) -> bool:
     """Q-CRIT-02: 除权日过滤的跨源 close 验证"""
-    import random as _random
     from data.sources import get_source
+    from data.normalizer import normalize
 
-    candidates = ["akshare_daily", "sina", "akshare"]
-    validate_src = _random.choice(candidates)
+    # Fix J: 从 DATA_SOURCE_PREFERENCE 动态选取与主源不同栈的验证源
+    validate_src = _pick_validate_source("jqdata")
     try:
         ds = get_source(validate_src)
     except Exception:
@@ -364,7 +433,8 @@ def _cross_validate_stock(sym: str, df: pd.DataFrame,
     if val_raw.empty:
         return True
 
-    val = val_raw.reset_index() if isinstance(val_raw.index, pd.DatetimeIndex) else val_raw.copy()
+    val = normalize(val_raw, sym, validate_src)
+    val = val.reset_index() if isinstance(val.index, pd.DatetimeIndex) else val.copy()
     val["date"] = pd.to_datetime(val["date"])
     main = df.reset_index() if isinstance(df.index, pd.DatetimeIndex) else df.copy()
     main["date"] = pd.to_datetime(main["date"])

@@ -83,9 +83,10 @@ def compute_hot_stocks_from_bars(store: SignalStore | None = None,
 
 
 def _load_industry_cache() -> pd.DataFrame:
-    """加载行业成分股缓存 [symbol, industry]。
+    """加载行业成分股缓存 [symbol, industry, industry_l1]。
 
     优先 SW2（申万二级，~130行业），不存在则降级到旧 EM 缓存（~26行业）。
+    2026-06-29: 保留 industry_l1 列，用于 SW1 级聚合。
     """
     from pathlib import Path
     cache_dir = Path(__file__).resolve().parents[2] / "data/raw/_cache"
@@ -95,9 +96,9 @@ def _load_industry_cache() -> pd.DataFrame:
     if sw2_caches:
         df = pd.read_parquet(sw2_caches[0])
         if "symbol" in df.columns and "industry_l2" in df.columns:
-            # 统一列名为 industry，兼容下游
+            # 统一 industry_l2 列名为 industry，保留 industry_l1
             df = df.rename(columns={"industry_l2": "industry"})
-            logger.info(f"SW2 行业缓存: {len(df)} 条, {df['industry'].nunique()} 行业")
+            logger.info(f"SW2 行业缓存: {len(df)} 条, {df['industry'].nunique()} 行业, industry_l1 已保留")
             return df
 
     # 降级到旧 EM 缓存
@@ -127,19 +128,6 @@ def compute_industry_compare_from_bars(store: SignalStore | None = None,
         store = SignalStore()
     end = end or datetime.now().strftime("%Y-%m-%d")
 
-    # ═══ Schema 迁移（幂等） ═══
-    conn = store._connect()
-    try:
-        for col in ("volume_ratio", "breadth"):
-            try:
-                conn.execute(f"ALTER TABLE industry_compare ADD COLUMN {col} REAL")
-            except Exception:
-                pass
-        conn.commit()
-    finally:
-        conn.close()
-
-    # 加载行业成分股
     industry_df = _load_industry_cache()
     if industry_df.empty:
         logger.warning("行业成分股缓存为空，无法计算行业对比")
@@ -213,13 +201,86 @@ def compute_industry_compare_from_bars(store: SignalStore | None = None,
     out = grouped[write_mask].copy()
     out["volume_change"] = 0.0  # 占位，兼容旧表列
 
+    # ── SW2 列名统一（industry → industry_name）──
     out = out[["date", "industry", "daily_change", "volume_change",
                "volume_ratio", "breadth",
                "leader_symbol", "leader_change", "rank", "stock_count"]]
     out = out.rename(columns={"industry": "industry_name"})
 
-    # ⚠️ DATA_MODIFICATION — 写入 industry_compare（store 内部自动按 date 去重）
-    store.store_industry_compare(out)
-    n = len(out)
-    logger.info(f"行业对比计算完成: {n} 行, {out['date'].nunique()} 天")
-    return n
+    # ═══ SW2 写入 industry_compare_sw2 ═══
+    store.store_industry_compare_sw2(out)
+    n_sw2 = len(out)
+
+    # ================================================================
+    # SW1 级计算: 从 daily_bars 按 industry_l1 聚合
+    # ================================================================
+    if "industry_l1" in industry_df.columns:
+        sym_to_l1 = dict(zip(industry_df["symbol"], industry_df["industry_l1"]))
+        l1_col = "industry_l1"
+        bars[l1_col] = bars["symbol"].map(sym_to_l1)
+        l1_bars = bars.dropna(subset=[l1_col])
+
+        if not l1_bars.empty:
+            # 量能
+            l1_vol = l1_bars.groupby(["date", l1_col], as_index=False)["volume"].sum()
+            l1_vol = l1_vol.sort_values([l1_col, "date"])
+            l1_vol["volume_ma20"] = l1_vol.groupby(l1_col)["volume"].transform(
+                lambda x: x.rolling(20, min_periods=5).mean())
+            l1_vol["volume_ratio"] = l1_vol["volume"] / l1_vol["volume_ma20"].replace(0, float("nan"))
+            l1_vol["volume_ratio"] = l1_vol["volume_ratio"].fillna(1.0).clip(0.1, 5.0).round(2)
+            l1_vol_map = l1_vol.set_index(["date", l1_col])["volume_ratio"].to_dict()
+            l1_stock_counts = industry_df.groupby("industry_l1")["symbol"].nunique().to_dict()
+
+            # 聚合
+            l1_grouped = l1_bars.groupby(["date", l1_col], as_index=False).agg(
+                daily_change=("daily_change", "mean"),
+                up_ratio=("is_up", "mean"),
+            )
+            l1_grouped["breadth"] = (l1_grouped["up_ratio"] * 100).round(1)
+            l1_grouped["volume_ratio"] = l1_grouped.set_index(["date", l1_col]).index.map(
+                lambda x: l1_vol_map.get(x, 1.0))
+            l1_grouped["stock_count"] = l1_grouped[l1_col].map(l1_stock_counts).fillna(0).astype(int)
+
+            # leader
+            l1_leader_idx = l1_bars.loc[l1_bars.groupby(["date", l1_col])["daily_change"].idxmax()]
+            l1_leader_map = l1_leader_idx.set_index(["date", l1_col])[["symbol", "daily_change"]]
+            l1_grouped["leader_symbol"] = l1_grouped.set_index(["date", l1_col]).index.map(
+                lambda x: l1_leader_map.loc[x, "symbol"] if x in l1_leader_map.index else "")
+            l1_grouped["leader_change"] = l1_grouped.set_index(["date", l1_col]).index.map(
+                lambda x: l1_leader_map.loc[x, "daily_change"] if x in l1_leader_map.index else 0.0)
+
+            l1_grouped["rank"] = l1_grouped.groupby("date")["daily_change"].rank(ascending=False).astype(int)
+            l1_grouped["daily_change"] = l1_grouped["daily_change"].round(2)
+
+            # 别名翻译: parquet industry_l1 旧名 → SW_INDEX_MAP 新名
+            L1_ALIAS = {"化工":"基础化工","电气设备":"电力设备",
+                        "纺织服装":"纺织服饰","商业贸易":"商贸零售","休闲服务":"社服"}
+            l1_grouped[l1_col] = l1_grouped[l1_col].map(lambda x: L1_ALIAS.get(x, x))
+
+            # 只输出 start~end 范围
+            l1_mask = l1_grouped["date"] >= start
+            l1_out = l1_grouped[l1_mask].copy()
+            l1_out["volume_change"] = 0.0
+            l1_out["level"] = "SW1"
+            l1_out = l1_out.rename(columns={l1_col: "industry_name"})
+            l1_out = l1_out[["date", "industry_name", "daily_change", "volume_change",
+                             "volume_ratio", "breadth",
+                             "leader_symbol", "leader_change", "rank", "stock_count", "level"]]
+        else:
+            l1_out = pd.DataFrame()
+    else:
+        l1_out = pd.DataFrame()
+
+    # ═══ SW1 写入 industry_compare_sw1 ═══
+    n_l1 = 0
+    if not l1_out.empty:
+        l1_write = l1_out[["date", "industry_name", "daily_change", "volume_change",
+                           "volume_ratio", "breadth",
+                           "leader_symbol", "leader_change", "rank", "stock_count"]]
+        store.store_industry_compare_sw1(l1_write)
+        n_l1 = len(l1_write)
+        logger.info(f"  SW1 {l1_write['date'].nunique()} 天 x {l1_write['industry_name'].nunique()} 行业 = {n_l1} 行")
+
+    total = n_sw2 + n_l1
+    logger.info(f"行业对比计算完成: SW2={n_sw2} + SW1={n_l1} = {total} 行")
+    return total

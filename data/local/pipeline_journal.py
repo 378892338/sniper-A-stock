@@ -94,9 +94,18 @@ class PipelineJournal:
                 """SELECT 1 FROM pipeline_journal
                    WHERE symbol=? AND step='write' AND status='ok'
                      AND data_end >= ? LIMIT 1""", (symbol, since_date))
-            return cur.fetchone() is not None
+            if cur.fetchone() is not None:
+                return True
         finally:
             conn.close()
+        # Fix B: journal 无记录时回退查 daily_bars 表
+        try:
+            from data.local.warehouse import LocalDataWarehouse
+            wh = LocalDataWarehouse()
+            last = wh.get_last_date("daily_bars", "symbol", symbol)
+            return last is not None and last >= since_date
+        except Exception:
+            return False
 
     def get_missing_stocks(self, symbols: list[str], today: str) -> list[str]:
         need_fetch = []
@@ -122,7 +131,22 @@ class PipelineJournal:
         finally:
             conn.close()
         up_to_date = set(df[df["last_end"] >= today]["symbol"].tolist()) if not df.empty else set()
-        return [s for s in symbols if s not in up_to_date]
+        missing = [s for s in symbols if s not in up_to_date]
+        # Fix B: 对 journal 无记录的股票回退查 daily_bars 表
+        if missing:
+            try:
+                from data.local.warehouse import LocalDataWarehouse
+                wh = LocalDataWarehouse()
+                for sym in missing[:]:
+                    try:
+                        last = wh.get_last_date("daily_bars", "symbol", sym)
+                        if last and last >= today:
+                            missing.remove(sym)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return missing
 
     def get_run_summary(self, run_id: str) -> dict:
         conn = self._conn()

@@ -104,6 +104,7 @@ class StockScorer:
         if ind_df is not None and not ind_df.empty and ind_col:
             sym_col = "symbol" if "symbol" in ind_df.columns else None
             if sym_col:
+                # ── L2 行业（industry_l2）→ 股票 ──
                 for _, row in ind_df.iterrows():
                     sym = str(row[sym_col])
                     industry = str(row[ind_col])
@@ -111,25 +112,42 @@ class StockScorer:
                         maps[industry] = []
                     if sym not in maps[industry]:
                         maps[industry].append(sym)
-                logger.info(f"行业映射: {len(maps)} 个行业, {sum(len(v) for v in maps.values())} 只股票")
 
-        # ── 补全 SW 缺失行业（parquet 不全，用 SW_INDEX_MAP 填充占位）──
-        sw_names = set(SW_INDEX_MAP.values())
-        existing = set(maps.keys())
-        missing = sw_names - existing
-        if missing:
-            logger.info(f"SW 缺失行业: {missing}")
-            # 这些行业在 parquet 中没有数据，股票划到"其他"
-            for name in missing:
-                maps[name] = []
+                # ── L1 行业（industry_l1）→ 股票（2026-06-29 修复）──
+                # 之前此列被忽略，导致 L1 返回 SW1 名称时 get_sector_stocks() 返回空列表
+                if "industry_l1" in ind_df.columns:
+                    l1_before = len(maps)
+                    for _, row in ind_df.iterrows():
+                        l1 = str(row["industry_l1"])
+                        sym = str(row[sym_col])
+                        if l1 not in maps:
+                            maps[l1] = []
+                        if sym not in maps[l1]:
+                            maps[l1].append(sym)
+                    l1_added = len(maps) - l1_before
+                    logger.info(f"行业映射: L2={ind_col} + L1={l1_added}, "
+                                f"共 {len(maps)} 个行业, {sum(len(v) for v in maps.values())} 只股票")
+                else:
+                    logger.info(f"行业映射: {len(maps)} 个行业, "
+                                f"{sum(len(v) for v in maps.values())} 只股票")
 
-        # ── 建立同义名索引（EM→SW）──
+        # ── L1 新旧名别名（2026-06-29 修复）──
+        # SW2 parquet industry_l1 使用 2014 版旧名，SW_INDEX_MAP 使用 2021 版新名
+        # 在 L1 映射基础上创建新名入口，使 L1 返回的新名也能找到股票
+        L1_NAME_ALIASES = {
+            "化工": "基础化工", "电气设备": "电力设备",
+            "纺织服装": "纺织服饰", "商业贸易": "商贸零售",
+            "休闲服务": "社服",
+        }
+        for old_name, new_name in L1_NAME_ALIASES.items():
+            if old_name in maps and new_name not in maps:
+                maps[new_name] = maps[old_name][:]
+                aliases[new_name] = old_name
+
+        # ── 建立同义名索引（EM→SW，补充额外别名）──
         for em_name, sw_name in EM_SW_NAME_MAP.items():
             if em_name != sw_name:
                 aliases[em_name] = sw_name
-                # 如果是 SW 已有别名，复制对应股票列表
-                if sw_name in maps and em_name not in maps:
-                    maps[em_name] = maps[sw_name][:]
 
         # ── 加载概念板块映射（补充 SW 未覆盖的板块）──
         con_caches = list(cache_dir.glob("sw_concept_cons_*.parquet"))
@@ -185,6 +203,24 @@ class StockScorer:
             top = factor_df.head(CFG.top_n)
             return [{"symbol": idx, "score": round(row["score"], 1)}
                     for idx, row in top.iterrows()]
+
+        # 诊断：precomputed 覆盖不足时打 WARN 日志
+        _precomputed_total = 0
+        try:
+            from pathlib import Path as _P2
+            _cache_dir = _P2(__file__).resolve().parents[2] / "outputs/precomputed/l2_factors"
+            _fpath = _cache_dir / f"{date}.parquet"
+            if _fpath.exists():
+                import pandas as _pd2
+                _full = _pd2.read_parquet(_fpath)
+                _precomputed_total = len(_full)
+        except Exception:
+            pass
+        if _precomputed_total < 500:
+            logger.warning(
+                f"L2 candidates empty: precomputed 仅 {_precomputed_total} 只 "
+                f"({len(candidate_symbols)} 只候选股)，数据覆盖不足"
+            )
 
         result_df = self._score_batch_vectorized(candidate_symbols, date)
         if result_df.empty:
@@ -337,7 +373,10 @@ class StockScorer:
     def _compute_technical_factors_batch(
         self, bars_df: dict[str, pd.DataFrame], date: str
     ) -> pd.DataFrame:
-        """向量化计算 8 个纯量价因子（趋势、量能、MACD、RSI + 市值/换手）。"""
+        """向量化计算 9 个纯量价因子（趋势、量能、MACD、RSI、市值 + 底分型/量价反转/低波动）。
+
+        2026-06-29: 删除 turnover_score（恒 50.0 死因子），新增 3 个技术因子。
+        """
         records = []
         weights = {
             "trend": CFG.trend_factor_weight,
@@ -345,7 +384,6 @@ class StockScorer:
             "macd": CFG.macd_factor_weight,
             "rsi": CFG.rsi_factor_weight,
             "market_cap": CFG.market_cap_weight,
-            "turnover_score": CFG.turnover_weight,
         }
 
         for sym, bars in bars_df.items():
@@ -354,6 +392,8 @@ class StockScorer:
                 continue
 
             close_series = recent["close"].values.astype(float)
+            high_series = recent["high"].values.astype(float)
+            low_series = recent["low"].values.astype(float)
             latest = recent.iloc[-1]
 
             # 1. 趋势因子
@@ -390,18 +430,42 @@ class StockScorer:
                     rsi = 100 - 100 / (1 + rs)
                 rsi = max(0, min(100, rsi))
 
-            # 11. 市值因子
+            # 5. 市值因子
             market_cap = 50.0
             amount = latest.get("amount", 0) or 0
             if amount > 0:
                 log_amount = np.log(float(amount))
                 market_cap = max(0, min(100, (25 - log_amount) / 10 * 100))
 
-            # 12. 换手率因子
-            turnover_score = 50.0
-            turnover = latest.get("turnover", 0) or 0
-            if turnover > 0:
-                turnover_score = max(0, min(100, 100 - turnover * 100))
+            # 6. 底分型因子（2026-06-29 新增）
+            bottom_fractal = 50.0
+            if len(close_series) >= 3:
+                # 用最近 3 根 K 线判断：low[i-1] > low[i] < low[i+1] + 有实体
+                low_m1, low_0, low_p1 = low_series[-3], low_series[-2], low_series[-1]
+                close_0 = close_series[-2]
+                high_0 = high_series[-2]
+                if (low_m1 > low_0 and low_0 < low_p1
+                        and close_0 > low_0 + (high_0 - low_0) * 0.3):
+                    bottom_fractal = 100.0
+
+            # 7. 量价反转因子（2026-06-29 新增）
+            volume_reversal = 50.0
+            if "volume" in recent.columns and len(recent) >= 6:
+                close_5d_ago = close_series[-6]
+                if close_5d_ago > 0:
+                    price_dir = np.sign(latest["close"] / close_5d_ago - 1)
+                    vol_ma5 = recent["volume"].rolling(5).mean().iloc[-1]
+                    vol_ratio = latest.get("volume", 0) / max(vol_ma5, 1)
+                    vol_dir = np.sign(vol_ratio - 1)
+                    divergence = price_dir * vol_dir
+                    volume_reversal = max(0, min(100, 50 - divergence * 30))
+
+            # 8. 低波动率因子（2026-06-29 新增）
+            low_volatility = 50.0
+            if len(close_series) >= 21:
+                daily_ret = np.diff(close_series[-21:]) / close_series[-21:-1]
+                vol_20 = np.std(daily_ret)
+                low_volatility = max(0, min(100, 50 - vol_20 * 500))
 
             records.append({
                 "symbol": sym,
@@ -410,7 +474,9 @@ class StockScorer:
                 "macd": macd,
                 "rsi": rsi,
                 "market_cap": market_cap,
-                "turnover_score": turnover_score,
+                "bottom_fractal": bottom_fractal,
+                "volume_reversal": volume_reversal,
+                "low_volatility": low_volatility,
             })
 
         if not records:
@@ -513,14 +579,13 @@ class StockScorer:
         return pd.DataFrame(out)
 
     def _compute_composite_score(self, df: pd.DataFrame) -> pd.Series:
-        """12 因子加权合成评分（NaN-aware + 横截面排名）。
+        """13 因子加权合成评分（NaN-aware + 横截面排名）。
 
         两步：
           1. 加权合成原始分（NaN-aware，缺失因子跳过）
           2. 横截面百分位排名（0-100），保证评分在全市场范围内有区分度
 
-        横截面排名确保弱市中也能选出相对最强的股票，
-        解决"弱市所有因子都弱→评分集中在50附近→无法选股"的问题。
+        2026-06-29: turnover_score 移除，新增 bottom_fractal / volume_reversal / low_volatility。
         """
         weights = {
             "trend": CFG.trend_factor_weight,
@@ -534,7 +599,9 @@ class StockScorer:
             "roe_score": CFG.roe_weight,
             "revenue_growth": CFG.revenue_growth_weight,
             "market_cap": CFG.market_cap_weight,
-            "turnover_score": CFG.turnover_weight,
+            "bottom_fractal": CFG.bottom_fractal_weight,
+            "volume_reversal": CFG.volume_reversal_weight,
+            "low_volatility": CFG.low_volatility_weight,
         }
 
         cols = [c for c in weights if c in df.columns]

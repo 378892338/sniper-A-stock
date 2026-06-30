@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import json
+import signal
 import subprocess
 import threading
 from datetime import datetime
@@ -44,6 +45,9 @@ _running = False
 _last_run_time: str | None = None
 _last_run_success: bool | None = None
 _lock = threading.Lock()
+# 当前管道子进程（用于 Ctrl+C 时清理孤儿进程）
+_current_proc: subprocess.Popen | None = None
+_current_proc_lock = threading.Lock()
 
 
 def _get_latest_report() -> tuple[str, str | None]:
@@ -184,7 +188,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             _running = True
 
         def _run():
-            global _running, _last_run_time, _last_run_success
+            global _running, _last_run_time, _last_run_success, _current_proc
             try:
                 python = sys.executable
                 logger.info("触发管道重跑...")
@@ -193,14 +197,53 @@ class ReportHandler(BaseHTTPRequestHandler):
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                     cwd=str(ROOT),
                 )
-                try:
-                    stdout, stderr = proc.communicate(timeout=3600)
-                    success = proc.returncode == 0
-                except subprocess.TimeoutExpired:
+                with _current_proc_lock:
+                    _current_proc = proc
+                # 动态超时：轮询子进程 + 检查 pipeline.lock 心跳
+                _pipeline_lock = ROOT / "outputs/.pipeline.lock"
+                _deadline = time.time() + 3600
+                _heartbeat_timeout = 900
+                success = False
+                while time.time() < _deadline:
+                    try:
+                        _out, _err = proc.communicate(timeout=30)
+                        success = proc.returncode == 0
+                        stdout = _out or ""
+                        stderr = _err or ""
+                        break
+                    except subprocess.TimeoutExpired:
+                        if _pipeline_lock.exists():
+                            try:
+                                _mtime = _pipeline_lock.stat().st_mtime
+                                if time.time() - _mtime > _heartbeat_timeout:
+                                    logger.warning(f"管道无心跳 >{_heartbeat_timeout//60}min，终止")
+                                    proc.kill()
+                                    _, _err = proc.communicate()
+                                    stderr = _err or ""
+                                    success = False
+                                    break
+                            except OSError:
+                                pass
+                        continue
+                else:
+                    logger.warning("管道超时（>60min），终止")
                     proc.kill()
-                    stdout, stderr = proc.communicate()
+                    _, _err = proc.communicate()
+                    stderr = _err or ""
                     success = False
-                    logger.warning("管道重跑超时（>60min），已终止")
+                # 失败时写 crash_report
+                if not success and stderr:
+                    try:
+                        _crash = ROOT / "outputs/reports/crash_report.txt"
+                        _tail = "\n".join(stderr.strip().split("\n")[-50:])
+                        _crash.write_text(
+                            f"Time: {datetime.now()}\n"
+                            f"Exit: {proc.returncode}\n"
+                            f"--- Last 50 lines of stderr ---\n{_tail}",
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
                 with _lock:
                     _last_run_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     _last_run_success = success
@@ -217,6 +260,8 @@ class ReportHandler(BaseHTTPRequestHandler):
                     _last_run_success = False
                 logger.warning(f"管道重跑异常: {e}")
             finally:
+                with _current_proc_lock:
+                    _current_proc = None
                 with _lock:
                     _running = False
 
@@ -227,8 +272,22 @@ class ReportHandler(BaseHTTPRequestHandler):
         logger.debug(f"HTTP {args[0]} {args[1]} {args[2]}")
 
 
+def _signal_handler(signum, frame):
+    """信号处理器 — 收到退出信号时清理管道子进程，然后退出。"""
+    with _current_proc_lock:
+        proc = _current_proc
+    if proc and proc.poll() is None:
+        logger.warning(f"收到信号 {signum}，正在终止管道子进程 PID={proc.pid}")
+        proc.kill()
+        logger.info("管道子进程已终止")
+    # 重新抛出 KeyboardInterrupt 以停止 serve_forever
+    raise KeyboardInterrupt()
+
+
 def start_server():
     """启动 HTTP 服务（前台阻塞）。"""
+    # 注册信号处理器（仅 SIGINT，Windows 上 SIGTERM 无法从外部 kill 触发）
+    signal.signal(signal.SIGINT, _signal_handler)
     server = HTTPServer((HOST, PORT), ReportHandler)
     logger.info(f"日报服务启动: http://{HOST}:{PORT}")
     try:

@@ -8,6 +8,7 @@
 """
 
 import random
+import threading
 import time
 from collections import defaultdict
 
@@ -54,6 +55,10 @@ SOURCE_ENDPOINTS = {
     "10jqka": "10jqka_price",
 }
 
+# 通用超时配置（Fix K: 可配置，默认 15s）
+FETCH_TIMEOUT = 15  # per-symbol 超时
+_ASSERT_LOCK = threading.Lock()
+
 
 class FetcherGuard:
     """请求伪装层 — 模拟真人浏览器行为。
@@ -67,25 +72,22 @@ class FetcherGuard:
 
     def __init__(self, mean_delay: float = 1.5, std_delay: float = 0.5,
                  burst_limit: int = 5, burst_pause_min: float = 3.0,
-                 burst_pause_max: float = 8.0):
+                 burst_pause_max: float = 8.0,
+                 timeout: int = 15):
         self.mean_delay = mean_delay
         self.std_delay = std_delay
         self.burst_limit = burst_limit
         self.burst_pause_min = burst_pause_min
         self.burst_pause_max = burst_pause_max
+        self.timeout = timeout
         self._request_count = 0
         self._last_request_time = 0.0
+        self._lock = _ASSERT_LOCK  # Fix G: _request_count 的线程保护
 
     def get_user_agent(self) -> str:
         return random.choice(USER_AGENTS)
 
     def wait(self, bypass: bool = False, failure_multiplier: float = 1.0):
-        """请求前等待。bypass=True 跳过延时（用于无网络操作）。
-
-        Args:
-            bypass: 跳过延时
-            failure_multiplier: 失败退避系数 — 源连续失败越多，等待越久
-        """
         if bypass:
             return
         now = time.time()
@@ -96,10 +98,11 @@ class FetcherGuard:
         delay = float(np.random.lognormal(mu, sigma)) * delay_mult * failure_multiplier
         delay = max(0.3, min(delay, 10.0))
 
-        self._request_count += 1
-        if self._request_count >= self.burst_limit:
-            delay += random.uniform(self.burst_pause_min, self.burst_pause_max)
-            self._request_count = 0
+        with self._lock:  # Fix G
+            self._request_count += 1
+            if self._request_count >= self.burst_limit:
+                delay += random.uniform(self.burst_pause_min, self.burst_pause_max)
+                self._request_count = 0
 
         elapsed = now - self._last_request_time
         if elapsed < delay:
@@ -115,19 +118,66 @@ class FetcherGuard:
 class Fetcher:
     """统一请求入口 — 反检测 + 数据源自动升降级。
 
-    流程:
-      1. symbol 过滤（ST/920）
-      2. 按优先级遍历数据源，先检查健康状态
-      3. 某个源连续失败 3 次 → 自动降级到底部
-      4. 成功 → Normalizer → validate_download → 返回
+    Fix F: ST 列表缓存 300s TTL
+    Fix G: _consecutive_failures 全路径 Lock 保护
+    Fix K: per-symbol 15s 超时包装
+    Fix Q: _consecutive_failures 时间衰减（>1800s 减半）
     """
 
     def __init__(self, guard: FetcherGuard | None = None):
         from data.local.warehouse import LocalDataWarehouse
         self.guard = guard or FetcherGuard()
         self.wh = LocalDataWarehouse()
-        # 源级别缓存：记录本实例内各源的连续失败次数
         self._consecutive_failures: dict[str, int] = defaultdict(int)
+        self._failure_timestamps: dict[str, float] = {}
+        self._lock = _ASSERT_LOCK
+        # Fix F: ST 列表缓存
+        self._st_set: set | None = None
+        self._st_cache_time: float = 0.0
+        self._st_cache_ttl = 300  # 300s
+
+    def _get_st_set(self) -> set:
+        """Fix F: 延迟加载 + 300s 缓存"""
+        now = time.monotonic()
+        if self._st_set is not None and (now - self._st_cache_time) < self._st_cache_ttl:
+            return self._st_set
+        try:
+            st_list = self.wh.get_stock_list(status="st")
+            self._st_set = set(st_list["symbol"].values) if st_list is not None and not st_list.empty else set()
+            self._st_cache_time = now
+        except Exception:
+            self._st_set = self._st_set or set()
+        return self._st_set
+
+    def _apply_time_decay(self, src_name: str):
+        """Fix Q: 失败计数时间衰减 — >1800s 未更新则减半"""
+        ts = self._failure_timestamps.get(src_name)
+        now = time.time()
+        if ts and (now - ts) > 1800:
+            old = self._consecutive_failures.get(src_name, 0)
+            if old > 0:
+                self._consecutive_failures[src_name] = max(1, old // 2)
+                logger.debug(f"  {src_name} 失败计数衰减: {old} → {self._consecutive_failures[src_name]}")
+        self._failure_timestamps[src_name] = now
+
+    def _incr_fail(self, src_name: str):
+        """Fix G: 线程安全的失败计数递增 + Q: 时间戳记录"""
+        with self._lock:
+            self._apply_time_decay(src_name)
+            self._consecutive_failures[src_name] += 1
+            self._failure_timestamps[src_name] = time.time()
+
+    def _reset_fail(self, src_name: str):
+        """Fix G: 线程安全的失败计数重置"""
+        with self._lock:
+            self._consecutive_failures[src_name] = 0
+            self._failure_timestamps.pop(src_name, None)
+
+    def _get_fail_count(self, src_name: str) -> int:
+        """Fix G: 线程安全的读取"""
+        with self._lock:
+            self._apply_time_decay(src_name)
+            return self._consecutive_failures.get(src_name, 0)
 
     def fetch_stock_daily(self, symbol: str, start: str = "2000-01-01",
                           end: str | None = None,
@@ -141,11 +191,9 @@ class Fetcher:
         from config.settings import DATA_SOURCE_PREFERENCE
         from shared.retry import health_tracker
 
-        # 确定源顺序 & 按健康状态过滤
         base_order = [source_name] if source_name else list(DATA_SOURCE_PREFERENCE)
         base_order = [n for n in base_order if n in _sources]
 
-        # 健康排序：可用源在前，不可用源在后
         healthy = []
         degraded = []
         for name in base_order:
@@ -155,9 +203,8 @@ class Fetcher:
             else:
                 degraded.append(name)
 
-        # 按连续失败次数再细化排序
         def sort_key(n):
-            return self._consecutive_failures.get(n, 0)
+            return self._get_fail_count(n)
 
         healthy.sort(key=sort_key)
         degraded.sort(key=sort_key)
@@ -165,48 +212,57 @@ class Fetcher:
 
         last_error = None
         used_source = None
+        tried_sources = []
         for src_name in source_list:
-            # 跳过已标记不可用的源（除非 recovery interval 到了）
             ep = SOURCE_ENDPOINTS.get(src_name)
             if ep and not health_tracker.is_available(ep):
-                # 检查是否到了恢复间隔
                 if not health_tracker.should_attempt_recovery(ep):
                     logger.debug(f"{symbol}: {src_name} 健康检查未通过，跳过")
                     continue
                 else:
                     health_tracker.mark_recovery_attempt(ep)
 
-            # 按连续失败次数计算退避系数
-            fail_count = self._consecutive_failures.get(src_name, 0)
-            fail_mult = 1.0 + fail_count * 2.0  # 0次=1x, 1次=3x, 2次=5x, 3次=7x
+            fail_count = self._get_fail_count(src_name)
+            fail_mult = 1.0 + fail_count * 2.0
             self.guard.wait(failure_multiplier=fail_mult)
+            tried_sources.append(src_name)
             try:
                 ds: DataSource = get_source(src_name)
-                raw = ds.fetch_daily(symbol, start, end or "2099-12-31")
+                # Fix K: per-symbol 超时包装
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError
+                _pool = ThreadPoolExecutor(max_workers=1)
+                _ft = _pool.submit(ds.fetch_daily, symbol, start, end or "2099-12-31")
+                try:
+                    raw = _ft.result(timeout=self.guard.timeout)
+                except TimeoutError:
+                    _ft.cancel()
+                    self._incr_fail(src_name)
+                    logger.debug(f"{symbol}: {src_name} 超时 ({self.guard.timeout}s)")
+                    _pool.shutdown(wait=False)
+                    continue
+                finally:
+                    _pool.shutdown(wait=False)
             except Exception as e:
                 last_error = e
-                self._consecutive_failures[src_name] += 1
-                logger.debug(f"{symbol}: {src_name} 失败 ({self._consecutive_failures[src_name]}连败)")
+                self._incr_fail(src_name)
+                logger.debug(f"{symbol}: {src_name} 失败 ({self._get_fail_count(src_name)}连败): {e}")
                 continue
 
             if raw is None or raw.empty:
-                self._consecutive_failures[src_name] += 1
+                self._incr_fail(src_name)
                 logger.debug(f"{symbol}: {src_name} 空数据")
                 continue
 
-            # Normalizer
             try:
                 df = normalize(raw, symbol, src_name)
             except Exception as e:
-                self._consecutive_failures[src_name] += 1
+                self._incr_fail(src_name)
                 logger.debug(f"{symbol}: Normalizer 失败 ({e})")
                 continue
 
-            # 成功：重置失败计数
-            self._consecutive_failures[src_name] = 0
+            self._reset_fail(src_name)
             used_source = src_name
 
-            # 前置校验
             try:
                 from data.quality import validate_download
                 problems = validate_download(df, symbol)
@@ -216,18 +272,11 @@ class Fetcher:
                 pass
             return df
 
-        # 所有源都失败
-        if used_source is None and last_error:
-            logger.warning(f"{symbol}: 所有源均失败")
-
-        # 有效降级记录
-        degraded_sources = [n for n in degraded if self._consecutive_failures.get(n, 0) >= 3]
-        if degraded_sources:
-            logger.debug(f"当前降级源: {degraded_sources}")
+        # Fix H: 所有源失败时聚合 WARNING
+        if used_source is None:
+            logger.warning(f"{symbol}: 尝试 {len(tried_sources)} 个源均失败: {', '.join(tried_sources[:5])}")
 
         return pd.DataFrame()
-
-    # ── 批量 ──
 
     def fetch_stock_list(self, symbols: list[str], start: str = "2000-01-01",
                          end: str | None = None,
@@ -240,8 +289,6 @@ class Fetcher:
         logger.info(f"批量获取: {len(results)}/{len(symbols)} 成功")
         return results
 
-    # ── 健康状态 ──
-
     def health_status(self) -> list[dict]:
         from shared.retry import health_tracker
         return [
@@ -249,15 +296,12 @@ class Fetcher:
             for ep in health_tracker.unavailable_endpoints
         ]
 
-    # ── 内部过滤 ──
-
     def _should_skip(self, symbol: str) -> bool:
         if symbol.startswith("920"):
             return True
         try:
-            st_list = self.wh.get_stock_list(status="st")
-            if st_list is not None and not st_list.empty:
-                return symbol in st_list["symbol"].values
+            st_set = self._get_st_set()  # Fix F: 使用缓存
+            return symbol in st_set
         except Exception:
             pass
         return False

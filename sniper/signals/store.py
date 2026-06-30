@@ -9,7 +9,8 @@ import pandas as pd
 from sniper.signals.schema import (
     DB_FILE, ALL_SIGNAL_DDLS,
     T_NORTHBOUND, T_FUND_FLOW, T_DRAGON_TIGER,
-    T_INDUSTRY_COMPARE, T_HOT_STOCKS, T_QUARTERLY,
+    T_INDUSTRY_COMPARE, T_INDUSTRY_COMPARE_SW1, T_INDUSTRY_COMPARE_SW2,
+    T_HOT_STOCKS, T_QUARTERLY,
 )
 from core.logger import get_logger
 
@@ -56,6 +57,7 @@ class SignalStore:
             date_cols = {
                 T_NORTHBOUND: "date", T_FUND_FLOW: "date",
                 T_DRAGON_TIGER: "date", T_INDUSTRY_COMPARE: "date",
+                T_INDUSTRY_COMPARE_SW1: "date", T_INDUSTRY_COMPARE_SW2: "date",
                 T_HOT_STOCKS: "date",
             }
             if if_exists == "append" and table in date_cols and "date" in df.columns:
@@ -159,6 +161,14 @@ class SignalStore:
                   leader_symbol, leader_change, rank, stock_count"""
         self._store(T_INDUSTRY_COMPARE, df)
 
+    def store_industry_compare_sw1(self, df: pd.DataFrame):
+        """SW1 级行业数据"""
+        self._store(T_INDUSTRY_COMPARE_SW1, df)
+
+    def store_industry_compare_sw2(self, df: pd.DataFrame):
+        """SW2 级行业数据"""
+        self._store(T_INDUSTRY_COMPARE_SW2, df)
+
     def get_industry_compare(self, date: str) -> pd.DataFrame:
         return self._query(
             f"SELECT * FROM {T_INDUSTRY_COMPARE} WHERE date = ? ORDER BY rank",
@@ -170,6 +180,25 @@ class SignalStore:
             f"SELECT * FROM {T_INDUSTRY_COMPARE} WHERE date >= ? AND date <= ? ORDER BY date, rank",
             (start, end),
         )
+
+    # SW1/SW2 独立表查询
+    def get_industry_compare_sw1(self, date: str) -> pd.DataFrame:
+        return self._query(
+            f"SELECT * FROM {T_INDUSTRY_COMPARE_SW1} WHERE date = ? ORDER BY rank", (date,))
+
+    def get_industry_compare_sw2(self, date: str) -> pd.DataFrame:
+        return self._query(
+            f"SELECT * FROM {T_INDUSTRY_COMPARE_SW2} WHERE date = ? ORDER BY rank", (date,))
+
+    def get_industry_compare_sw1_range(self, start: str, end: str) -> pd.DataFrame:
+        return self._query(
+            f"SELECT * FROM {T_INDUSTRY_COMPARE_SW1} WHERE date >= ? AND date <= ? ORDER BY date, rank",
+            (start, end))
+
+    def get_industry_compare_sw2_range(self, start: str, end: str) -> pd.DataFrame:
+        return self._query(
+            f"SELECT * FROM {T_INDUSTRY_COMPARE_SW2} WHERE date >= ? AND date <= ? ORDER BY date, rank",
+            (start, end))
 
     # ── 强势股 ──
 
