@@ -12,6 +12,7 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# TODO: migrate to `import sniper.config as _cfg` (latent import-time binding risk)
 from sniper.config import DDR as CFG
 from core.logger import get_logger
 

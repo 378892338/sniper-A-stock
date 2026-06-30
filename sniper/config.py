@@ -186,10 +186,39 @@ class FusionConfig:
     # 数值保护
     epsilon: float = 1e-8
 
+    # === 门控优化新增(终审APPROVED v1.1) ===
+    # 门控模式: "linear"(默认,当前行为)|"humpback"|"humpback_cv"|"full"
+    gating_mode: str = "linear"
+    # 驼峰参数(μ=66精确锚定全周期L0中位数)
+    humpback_mu: float = 66.0
+    sigma_left: float = 18.0      # 熊市侧带宽(更宽,保留ETF避险)
+    sigma_right: float = 9.0      # 牛市侧带宽(更窄,快速压制饱和)
+    w_floor_global: float = 0.10  # 全局硬地板(ETF永不彻底失效)
+
+    # CV截面饱和检测
+    cv_enabled: bool = True
+    cv_low: float = 0.03    # CV<=此值->信号饱和->g_cv=floor
+    cv_high: float = 0.12   # CV>=此值->信号健康->g_cv=1.0
+    g_cv_floor: float = 0.20  # CV门控地板(永不完全关停)
+
+    # 波动率自适应(默认关闭,Phase4验证后开启)
+    vol_enabled: bool = False
+    vol_mid: float = 0.22     # Sigmoid中点(~22%年化波动率)
+    vol_steep: float = 0.05   # Sigmoid陡峭度
+    vol_min: float = 0.60     # 低波乘数下限
+    vol_max: float = 1.10     # 高波乘数上限
+
     def __post_init__(self):
         assert self.l0_min < self.l0_max, "l0_min must be < l0_max"
         assert 0 <= self.w_etf_min < self.w_etf_max <= 1.0
         assert self.prior_precision > 0
+        assert self.gating_mode in ("linear", "humpback", "humpback_cv", "full"), \
+            f"gating_mode={self.gating_mode} not in (linear,humpback,humpback_cv,full)"
+        assert 0 < self.cv_low < self.cv_high, f"cv_low<cv_high required: {self.cv_low}>={self.cv_high}"
+        assert 0 < self.g_cv_floor < 1.0
+        if self.gating_mode == "linear":
+            assert self.w_floor_global <= self.w_etf_min, \
+                f"linear模式: w_floor_global({self.w_floor_global})必须<=w_etf_min({self.w_etf_min})"
 
 
 @dataclass(frozen=True)

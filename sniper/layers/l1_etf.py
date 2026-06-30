@@ -14,6 +14,7 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# TODO: migrate to `import sniper.config as _cfg` (latent import-time binding risk)
 from sniper.config import ETF_MOMENTUM as CFG
 from sniper.data_router import DataRouter
 from core.logger import get_logger

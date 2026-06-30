@@ -13,6 +13,7 @@ from enum import Enum
 import json
 from pathlib import Path
 
+# TODO: migrate to `import sniper.config as _cfg` (latent import-time binding risk)
 from sniper.config import DEGRADATION as CFG
 from core.logger import get_logger
 

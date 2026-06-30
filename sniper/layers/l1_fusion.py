@@ -15,7 +15,7 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
-from sniper.config import FUSION as CFG
+import sniper.config as _cfg_mod  # 模块引用(非from-import),支持运行时替换FUSION单例
 from core.logger import get_logger
 
 logger = get_logger("sniper.layers.l1_fusion")
@@ -51,29 +51,124 @@ class BayesianPrecisionFusion:
     """
 
     def __init__(self, config: dataclass | None = None):
-        self.cfg = config or CFG
+        self.cfg = config or _cfg_mod.FUSION
 
     # ── 纯函数接口 ──
 
     @staticmethod
-    def _compute_w_etf(l0_score: float, cfg: dataclass) -> float:
-        """L0 -> ETF先验权重 线性插值。
+    @staticmethod
+    def _compute_w_etf(l0_score: float, cfg: dataclass,
+                        etf_scores: np.ndarray | None = None,
+                        daily_returns: np.ndarray | None = None) -> float:
+        """L0 -> ETF先验权重 多模式门控(纯函数)。
 
-        纯函数。输入确定->输出确定。
+        gating_mode:
+          "linear"   — 原线性插值(默认,逐bit兼容)
+          "humpback" — 非对称Gaussian驼峰 w_base(L0)
+          "humpback_cv" — 驼峰 × CV截面饱和检测
+          "full"    — 驼峰 × CV × 波动率自适应
 
-        公式:
-          w_etf = clamp((L0 - l0_min) / (l0_max - l0_min) * (w_etf_max - w_etf_min) + w_etf_min,
-                        w_etf_min, w_etf_max)
-
-        数值保护: l0_score NaN -> 返回 w_etf_min + (w_etf_max - w_etf_min) / 2 = 0.40
+        数值保护: l0_score NaN -> 返回中位值 0.40
         """
         eps = getattr(cfg, 'epsilon', 1e-8)
         if np.isnan(l0_score):
             return cfg.w_etf_min + (cfg.w_etf_max - cfg.w_etf_min) / 2.0
 
-        ratio = (l0_score - cfg.l0_min) / max(cfg.l0_max - cfg.l0_min, eps)
-        w_etf = cfg.w_etf_min + ratio * (cfg.w_etf_max - cfg.w_etf_min)
-        return float(max(cfg.w_etf_min, min(cfg.w_etf_max, w_etf)))
+        mode = getattr(cfg, 'gating_mode', 'linear')
+
+        # ── linear 模式: 原公式,逐bit不变 ──
+        if mode == "linear":
+            ratio = (l0_score - cfg.l0_min) / max(cfg.l0_max - cfg.l0_min, eps)
+            w = cfg.w_etf_min + ratio * (cfg.w_etf_max - cfg.w_etf_min)
+            return float(max(cfg.w_etf_min, min(cfg.w_etf_max, w)))
+
+        # ── humpback 模式: 非对称Gaussian驼峰 ──
+        mu = getattr(cfg, 'humpback_mu', 66.0)
+        sigma = getattr(cfg, 'sigma_left', 18.0) if l0_score < mu else getattr(cfg, 'sigma_right', 9.0)
+        sigma = max(sigma, eps)
+        z = (l0_score - mu) / sigma
+        w_base = cfg.w_etf_max * np.exp(-0.5 * z * z)
+
+        if mode == "humpback":
+            return float(max(cfg.w_etf_min, min(cfg.w_etf_max, w_base)))
+
+        # ── humpback_cv 模式: 驼峰 × CV截面饱和检测 ──
+        g_cv = 1.0
+        cv_enabled = getattr(cfg, 'cv_enabled', True)
+        if cv_enabled and etf_scores is not None and len(etf_scores) >= 5:
+            g_cv, _ = BayesianPrecisionFusion._compute_cv_saturation(etf_scores, cfg)
+
+        if mode == "humpback_cv":
+            w = w_base * g_cv
+            w_floor = getattr(cfg, 'w_floor_global', cfg.w_etf_min)
+            return float(max(w_floor, min(cfg.w_etf_max, w)))
+
+        # ── full 模式: 驼峰 × CV × 波动率 ──
+        g_vol = 1.0
+        vol_enabled = getattr(cfg, 'vol_enabled', False)
+        if vol_enabled and daily_returns is not None and len(daily_returns) >= 10:
+            vol = float(np.std(daily_returns[-20:]) * np.sqrt(252))
+            vol_mid = getattr(cfg, 'vol_mid', 0.22)
+            vol_steep = max(getattr(cfg, 'vol_steep', 0.05), eps)
+            vol_min = getattr(cfg, 'vol_min', 0.60)
+            vol_max = getattr(cfg, 'vol_max', 1.10)
+            g_vol = vol_min + (vol_max - vol_min) / (1.0 + np.exp(-(vol - vol_mid) / vol_steep))
+        elif vol_enabled and daily_returns is None:
+            logger.warning("vol_enabled=True但daily_returns=None, 强制g_vol=1.0")
+
+        w = w_base * g_cv * g_vol
+        w_floor = getattr(cfg, 'w_floor_global', cfg.w_etf_min)
+        return float(max(w_floor, min(cfg.w_etf_max, w)))
+
+    @staticmethod
+    def _compute_cv_saturation(etf_scores: np.ndarray,
+                                cfg: dataclass) -> tuple[float, dict]:
+        """14个ETF截面变异系数 -> 衰减因子(纯函数)。
+
+        5层数值防御:
+          L0: NaN/Inf过滤 -> 剔除
+          L1: mean_val < eps -> return (1.0, degraded)  # 除零保护
+          L2: n_valid < 5 -> return (1.0, degraded)     # 数据不足不惩罚
+          L3: CV正常计算
+          L4: 线性插值 + clamp到[g_cv_floor, 1.0]
+
+        Returns: (g_cv, diagnostics_dict)
+        """
+        eps = getattr(cfg, 'epsilon', 1e-8)
+        # L0: 过滤非有限值
+        valid = etf_scores[np.isfinite(etf_scores)]
+        n_valid = len(valid)
+
+        # L2: 数据不足不惩罚
+        if n_valid < 5:
+            return 1.0, {'cv': np.nan, 'mean': np.nan, 'std': np.nan,
+                         'n_valid': n_valid, 'degraded': True, 'reason': 'n_valid<5'}
+
+        mean_val = float(np.mean(valid))
+
+        # L1: 除零保护
+        if mean_val < eps:
+            return 1.0, {'cv': np.nan, 'mean': 0.0, 'std': float(np.std(valid)),
+                         'n_valid': n_valid, 'degraded': True, 'reason': 'mean<eps'}
+
+        # L3: CV正常计算
+        std_val = float(np.std(valid))
+        cv = std_val / mean_val
+
+        cv_low = getattr(cfg, 'cv_low', 0.03)
+        cv_high = getattr(cfg, 'cv_high', 0.12)
+        g_cv_floor = getattr(cfg, 'g_cv_floor', 0.20)
+
+        # L4: 线性插值 + clamp
+        if cv >= cv_high:
+            g_cv = 1.0
+        elif cv <= cv_low:
+            g_cv = g_cv_floor
+        else:
+            g_cv = g_cv_floor + (cv - cv_low) / (cv_high - cv_low) * (1.0 - g_cv_floor)
+
+        return float(g_cv), {'cv': cv, 'mean': mean_val, 'std': std_val,
+                              'n_valid': n_valid, 'degraded': False}
 
     @staticmethod
     def _signal_gain(etf_score: float, signal_scale: float,
@@ -126,22 +221,28 @@ class BayesianPrecisionFusion:
              sw1_df: pd.DataFrame,
              etf_mapped: dict[str, float],
              etf_confidence: dict[str, float],
-             l0_score: float) -> pd.DataFrame:
+             l0_score: float,
+             daily_returns: np.ndarray | None = None) -> pd.DataFrame:
         """执行贝叶斯精度融合。
 
         Args:
           sw1_df: SectorScorer.composite_scores()输出
-            columns: [industry_name, composite, ...], 至少2列
-          etf_mapped: ETF->SW1映射后的评分 {sw1_name: etf_score_0_100}
+          etf_mapped: ETF->SW1映射评分 {sw1_name: etf_score_0_100}
           etf_confidence: {sw1_name: confidence_0_1}
           l0_score: L0市场评分
+          daily_returns: None或csi300日收益率(仅full模式vol_enabled时使用)
 
         Returns DataFrame:
           industry_name | sw1_composite | etf_mapped | fused_score |
           w_etf | likelihood_precision | confidence | source
         """
         eps = self.cfg.epsilon
-        w_etf = self._compute_w_etf(l0_score, self.cfg)
+
+        # 提取ETF评分数值(供CV饱和检测)
+        etf_scores = np.array(list(etf_mapped.values()), dtype=float) if etf_mapped else None
+        w_etf = self._compute_w_etf(l0_score, self.cfg,
+                                     etf_scores=etf_scores,
+                                     daily_returns=daily_returns)
 
         # 校验评分分布(评审FAIL-13修复)
         if not self._validate_scores(sw1_df):

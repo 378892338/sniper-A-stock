@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+# TODO: migrate to `import sniper.config as _cfg` (latent import-time binding risk)
 from sniper.config import SECTOR as CFG
 from sniper.data_router import DataRouter
 from core.logger import get_logger
@@ -383,23 +384,49 @@ class FusionOrchestrator:
         return self._executor
 
     def _has_sufficient_data(self, date: str) -> bool:
-        """检查是否有足够的历史数据进入预热(评审FAIL-18修复)
+        """检查是否有足够历史数据进入预热(终审APPROVED设计)
 
-        要求: ETF历史日数>=120日且SW1数据覆盖>=120日
+        条件(全部满足才算sufficient):
+          1. >=12/14 ETF各有>=150行数据,且最新日期距date<=15自然日
+          2. SW1指数表有实际>=120行数据(从sw_index_daily表查询)
+          3. 首次检查后缓存结果
         """
         if self._has_sufficient_data_checked:
             return self._warmup_state != "COLD"
 
         from data.index_etf import ETF_INDEX_MAP
-        sample_etf = list(ETF_INDEX_MAP.keys())[0]
-        bars = self.router.get_etf_daily(sample_etf)
-        has_etf = not bars.empty and len(bars) >= 120
 
-        cal = self.router.get_trading_dates()
-        has_sw1 = not cal.empty and len(cal) >= 120
+        # 条件1: ETF覆盖率 >= 12/14, 每只>=150行 + 新鲜度
+        etf_ok = 0
+        for etf_name in ETF_INDEX_MAP:
+            bars = self.router.get_etf_daily(etf_name)
+            if bars.empty or len(bars) < 150:
+                continue
+            if "date" in bars.columns:
+                last_date = pd.Timestamp(bars["date"].max())
+                days_behind = (pd.Timestamp(date) - last_date).days
+                if days_behind <= 15:
+                    etf_ok += 1
+            else:
+                etf_ok += 1
+        etf_sufficient = etf_ok >= 12
+
+        # 条件2: SW1有实际数据(从sw_index_daily表查,非交易日历代理)
+        try:
+            sw1_bars = self.router.wh.get_sw_index_daily("801150",
+                start="2000-01-01", end=date)
+            sw1_sufficient = not sw1_bars.empty and len(sw1_bars) >= 120
+        except Exception:
+            sw1_sufficient = False
 
         self._has_sufficient_data_checked = True
-        return has_etf and has_sw1
+        result = etf_sufficient and sw1_sufficient
+        if result:
+            logger.info(f"冷启动数据充分: ETF {etf_ok}/{len(ETF_INDEX_MAP)} + SW1充足")
+        else:
+            logger.info(f"冷启动数据不足: ETF {etf_ok}/{len(ETF_INDEX_MAP)}, "
+                        f"SW1={'充足' if sw1_sufficient else '不足'}")
+        return result
 
     def _warmup_check(self, date: str) -> bool:
         """冷启动状态检查, 返回True=可以正常融合, False=走纯SW1"""

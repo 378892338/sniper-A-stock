@@ -141,18 +141,55 @@ class DataRouter:
     # ── ETF 数据接口 — 新增(L0.5 ETF动量层) ──
 
     def get_etf_daily(self, etf_name: str, start: str = "", end: str = "") -> pd.DataFrame:
-        """获取单个ETF分类指数日线。
+        """获取单个ETF分类指数日线 — warehouse优先,网络降级。
 
-        委托给 data/index_etf.py, 数据缓存在外部。
-        返回 DataFrame[date, open, high, low, close, volume], 空时表示数据不可达。
-        """
-        from data.index_etf import fetch_etf_index_data
-        df = fetch_etf_index_data(etf_name, start or "2000-01-01", end or "2099-12-31")
-        if df.empty or "close" not in df.columns:
-            return pd.DataFrame()
-        if "date" in df.columns:
+        数据路径:
+          L0) warehouse.get_index_daily(name) -> 主路径(本地SQLite)
+          L1) fetch_etf_index_data(name)       -> 网络降级(首次部署填充)
+          L2) 返回旧数据(网络失败但有缓存)       -> STALE降级
+          L3) 返回空DataFrame                   -> 最终兜底
+
+        ETF指数数据由 updater.update_market_indices() 每日写入 index_daily 表,
+        以ETF中文名作为 name 字段(如"证券")。
+        返回 DataFrame[date, open, high, low, close, volume], reset_index。"""
+        start_date = start or "2000-01-01"
+        end_date = end or "2099-12-31"
+
+        # L0: 查本地仓库(主路径)
+        df = self.wh.get_index_daily(etf_name, start=start_date, end=end_date)
+        if not df.empty and "close" in df.columns:
+            df = df.reset_index()  # date从index还原为列
             df["date"] = pd.to_datetime(df["date"]).astype(str)
-        return df
+            return df
+
+        # L1: 网络降级(首次部署时填充)
+        from data.index_etf import fetch_etf_index_data
+        logger.info(f"ETF[{etf_name}]本地无数据,尝试网络获取...")
+        df = fetch_etf_index_data(etf_name, start_date, end_date)
+        if not df.empty and "close" in df.columns:
+            # 异步写入warehouse(不阻塞返回)
+            import threading
+            def _store(df_copy=df.copy()):
+                try:
+                    df_copy["name"] = etf_name
+                    self.wh.store_index_daily(df_copy, if_exists="append")
+                except Exception as e:
+                    logger.warning(f"ETF[{etf_name}]写入仓库失败: {e}")
+            threading.Thread(target=_store, daemon=True).start()
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"]).astype(str)
+            return df
+
+        # L2: 网络失败时有旧数据也返回(标记STALE)
+        df_stale = self.wh.get_index_daily(etf_name, start=start_date, end=end_date)
+        if not df_stale.empty:
+            logger.warning(f"ETF[{etf_name}]使用旧数据(网络不可达)")
+            df_stale = df_stale.reset_index()
+            df_stale["date"] = pd.to_datetime(df_stale["date"]).astype(str)
+            return df_stale
+
+        # L3: 最终兜底
+        return pd.DataFrame()
 
     def get_etf_daily_batch(self, etf_names: list[str] | None = None,
                             start: str = "", end: str = "") -> dict[str, pd.DataFrame]:

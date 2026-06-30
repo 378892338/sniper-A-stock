@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 
+# TODO: migrate to `import sniper.config as _cfg` (latent import-time binding risk)
 from sniper.config import STOCK as CFG
 from sniper.data_router import DataRouter
 from core.logger import get_logger
