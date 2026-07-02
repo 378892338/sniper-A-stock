@@ -38,15 +38,13 @@ OBSIDIAN_PATH = r"D:\Obsidian\SecondBrain\02-Projects\05-量化系统"
 # ── 辅助函数 ──
 
 def _l0_grade(score: float) -> tuple[str, str, str]:
-    """L0 评分等级：返回 (标签, 颜色hex, 图标)"""
+    """L0 评分等级：A股色系 — 红涨(加仓) 黄盘(持仓) 绿跌(休息)"""
     if score >= 70:
-        return ("市场强势", "#16a34a", "🟢")
-    elif score >= 64:
-        return ("中性偏强", "#ca8a04", "🟡")
-    elif score >= 30:
-        return ("谨慎参与", "#ea580c", "🟠")
+        return ("🔥 市场强势", "#dc2626", "🔴")  # 红色=加仓
+    elif score >= 60:
+        return ("⚡ 中性偏强", "#ca8a04", "🟡")  # 黄色=持仓
     else:
-        return ("建议回避", "#dc2626", "🔴")
+        return ("⚠️ 谨慎参与", "#16a34a", "🟢")  # 绿色=休息
 
 def _direction_icon(v: float) -> str:
     """趋势方向图标"""
@@ -55,108 +53,163 @@ def _direction_icon(v: float) -> str:
     return "→ 持平"
 
 def _pnl_color(pnl_pct: float) -> str:
-    if pnl_pct > 0.05: return "#16a34a"
-    if pnl_pct > 0: return "#65a30d"
-    if pnl_pct > -0.03: return "#ea580c"
-    return "#dc2626"
+    """A股色系：红涨绿跌"""
+    if pnl_pct > 0.05: return "#dc2626"  # 大涨→红
+    if pnl_pct > 0: return "#ef4444"     # 微涨→浅红
+    if pnl_pct > -0.03: return "#65a30d" # 微跌→浅绿
+    return "#16a34a"                      # 大跌→绿
 
 def _css() -> str:
     return """<style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
-       background: #f0f2f5; color: #1a1a2e; font-size: 14px; line-height: 1.6; }
-.container { max-width: 960px; margin: 0 auto; padding: 20px; }
-.header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-          color: #fff; padding: 28px 32px; border-radius: 12px; margin-bottom: 20px; }
-.header h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-.header .sub { opacity: .75; font-size: 13px; }
-.card { background: #fff; border-radius: 10px; padding: 20px 24px;
-        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-.card-title { font-size: 15px; font-weight: 600; color: #1a1a2e;
-              margin-bottom: 14px; padding-bottom: 8px;
-              border-bottom: 2px solid #e8e8ef; }
-.tag { display: inline-block; padding: 2px 10px; border-radius: 4px;
-       font-size: 12px; font-weight: 600; }
-.tag-green { background: #dcfce7; color: #166534; }
-.tag-yellow { background: #fef9c3; color: #854d0e; }
-.tag-orange { background: #ffedd5; color: #9a3412; }
-.tag-red { background: #fee2e2; color: #991b1b; }
-.refresh-bar { display: flex; align-items: center; gap: 10px; padding: 10px 24px;
-               background: #fff; border-radius: 8px; margin-bottom: 16px;
-               box-shadow: 0 1px 3px rgba(0,0,0,.08); font-size: 13px; }
-.refresh-btn { padding: 6px 16px; background: #2563eb; color: #fff;
-               border: none; border-radius: 6px; cursor: pointer; font-size: 13px;
-               transition: background .2s; white-space: nowrap; }
-.refresh-btn:hover { background: #1d4ed8; }
-.refresh-btn:disabled { background: #9ca3af; cursor: not-allowed; }
-.refresh-tip { color: #6b7280; font-size: 12px; flex: 1; }
-.update-time { color: #9ca3af; font-size: 12px; }
-.status-ok { color: #16a34a; font-size: 12px; }
-.status-running { color: #2563eb; font-size: 12px; animation: pulse 1.5s infinite; }
-.status-error { color: #dc2626; font-size: 12px; }
-.status-offline { color: #9ca3af; font-size: 12px; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
-.stat { text-align: center; padding: 12px; background: #f8f9fb; border-radius: 8px; }
-.stat .val { font-size: 22px; font-weight: 700; }
-.stat .lbl { font-size: 11px; color: #6b7280; margin-top: 2px; }
-.stat .sub { font-size: 12px; margin-top: 2px; }
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { background: #f8f9fb; padding: 8px 10px; text-align: left;
-     font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
-tr:hover td { background: #fafafa; }
-.action-list { list-style: none; padding: 0; }
-.action-list li { padding: 10px 14px; margin-bottom: 6px; border-radius: 6px;
-                  border-left: 4px solid; display: flex; align-items: center; gap: 10px; }
-.action-high { background: #fef2f2; border-color: #dc2626; }
-.action-mid { background: #fffbeb; border-color: #d97706; }
-.action-low { background: #f0fdf4; border-color: #16a34a; }
-.action-list .num { font-weight: 700; font-size: 13px; min-width: 28px; }
-.action-list .txt { flex: 1; }
-.action-list .reason { font-size: 12px; color: #6b7280; }
-.trend-up { color: #dc2626; }
-.trend-down { color: #16a34a; }
-.trend-flat { color: #6b7280; }
-.fold { margin-top: 12px; }
-.fold summary { cursor: pointer; font-weight: 600; color: #6b7280;
-               padding: 6px 0; font-size: 13px; }
-.fold[open] summary { color: #1a1a2e; }
-.l0-gauge { display: flex; align-items: center; gap: 16px; margin: 8px 0; }
-.l0-gauge .bar-wrap { flex: 1; height: 18px; background: #e5e7eb; border-radius: 9px;
-                      position: relative; overflow: hidden; }
-.l0-gauge .bar { height: 100%; border-radius: 9px; transition: width .5s; }
-.l0-gauge .bar-label { position: absolute; right: 8px; top: 0; line-height: 18px;
-                       font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.5); }
-.l0-dims { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.l0-dim { flex: 1; min-width: 100px; padding: 8px 10px; border-radius: 6px;
-          background: #f8f9fb; text-align: center; }
-.l0-dim .dim-val { font-size: 18px; font-weight: 700; }
-.l0-dim .dim-lbl { font-size: 11px; color: #6b7280; }
-@media (max-width: 640px) {
-  .grid-2, .grid-4 { grid-template-columns: 1fr; }
-  .l0-dims { flex-direction: column; }
-  .container { padding: 10px; }
-}
-@media print {
-  .card { break-inside: avoid; }
-  .fold[open] summary { color: #1a1a2e; }
-}
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+       background: #eef2f7; color: #1a1f36; font-size: 14px; line-height: 1.6; }
 
-/* ── L0 周线折线图 ── */
-.chart-wrap { background: #f8f9fb; border-radius: 8px; padding: 16px 12px 12px; margin-top: 10px; position: relative; }
+/* ── Typography ── */
+.container { max-width: 800px; margin: 0 auto; padding: 24px 20px; }
+h1 { font-size: 22px; font-weight: 700; }
+h2 { font-size: 18px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 600; }
+
+/* ── Animations ── */
+@keyframes gradShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+@keyframes goldPulse { 0%,100%{text-shadow:0 0 8px rgba(201,168,76,0.3)} 50%{text-shadow:0 0 20px rgba(201,168,76,0.6)} }
+@keyframes cardIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+.card { animation: cardIn .45s ease both; }
+
+/* ── Header ── */
+.header { background: linear-gradient(135deg, #0f1b2d, #1a3355, #0f1b2d);
+          background-size: 200% 200%; animation: gradShift 8s ease infinite;
+          color: #fff; padding: 28px 32px; border-radius: 14px; margin-bottom: 18px;
+          border-bottom: 3px solid #c9a84c; }
+.header h1 { font-size: 24px; font-weight: 700; letter-spacing: 0.5px; margin: 0; }
+.header .sub { font-size: 14px; color: rgba(255,255,255,0.55); margin-top: 4px; }
+
+/* ── Refresh bar ── */
+.refresh-bar { display: flex; align-items: center; gap: 14px; padding: 12px 0 0;
+               margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 13px;
+               color: rgba(255,255,255,0.5); }
+.refresh-btn { padding: 6px 18px; background: #c9a84c; color: #0f1b2d;
+               border: none; border-radius: 4px; cursor: pointer; font-size: 13px;
+               font-weight: 600; transition: all .2s; white-space: nowrap; }
+.refresh-btn:hover { background: #dbb95c; transform: translateY(-1px); }
+.refresh-btn:disabled { opacity: .5; cursor: not-allowed; }
+.status-ok { color: #34d399; font-size: 13px; font-weight: 500; }
+.status-running { color: #60a5fa; font-size: 13px; font-weight: 500; animation: pulse 1.5s infinite; }
+.status-error { color: #f87171; font-size: 13px; font-weight: 500; }
+.status-offline { color: rgba(255,255,255,0.3); font-size: 13px; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+/* ── Card ── */
+.card { background: #fff; padding: 20px 28px; margin-bottom: 0; }
+.card-title { font-size: 18px; font-weight: 700; color: #0f1b2d; letter-spacing: 0.3px;
+              margin-bottom: 16px; padding: 0 0 12px 14px;
+              border-bottom: 2px solid #e6edf5; display: flex; align-items: center; gap: 10px;
+              border-left: 3px solid #c9a84c; }
+.card-title .badge { font-size: 11px; font-weight: 600; background: #0f1b2d;
+                     color: #c9a84c; padding: 2px 10px; border-radius: 10px; }
+
+/* ── Report body (connected card stack) ── */
+.report-body { background: #fff; border-radius: 12px; margin-bottom: 18px;
+               box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; }
+.report-body .card:not(:last-child) { border-bottom: 1px solid #f0f2f6; }
+.report-body .card:last-child { border-bottom: none; }
+
+/* ── Tags ── */
+.tag { display: inline-block; padding: 3px 12px; border-radius: 4px;
+       font-size: 13px; font-weight: 600; }
+.tag-green { background: #d1fae5; color: #065f46; }
+.tag-yellow { background: #fef3c7; color: #92400e; }
+.tag-orange { background: #ffedd5; color: #9a3412; }
+.tag-red { background: #fee2e2; color: #dc2626; }
+
+/* ── Score glow ── */
+.score-glow { font-size: 60px; font-weight: 800; line-height: 1; letter-spacing: -2px; }
+.score-glow.red { color: #dc2626; animation: goldPulse 2.5s ease-in-out infinite; }
+.score-glow.amber { color: #d97706; animation: goldPulse 2.5s ease-in-out infinite; }
+.score-glow.green { color: #059669; }
+
+/* ── Stats - smaller numbers ── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.stat { text-align: center; padding: 14px 10px; background: #f8fafc;
+        border-radius: 10px; border: 1px solid #eef2f7; }
+.stat .val { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+.stat .lbl { font-size: 12px; color: #8896ab; margin-top: 2px; font-weight: 500; }
+
+/* ── Tables - uniform ── */
+.table-wrap { overflow-x: auto; margin: 0; }
+table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 14px; }
+th { background: #f1f4f9; padding: 10px 12px; text-align: left;
+     font-weight: 600; font-size: 14px; color: #334155;
+     border-bottom: 2px solid #dce2ec; white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid #edf2f7;
+     vertical-align: middle; font-size: 14px; }
+tbody tr:nth-child(even) td { background: #fafbfc; }
+tr:hover td { background: #eef2ff !important; }
+.num-cell { font-variant-numeric: tabular-nums; text-align: right; font-feature-settings: "tnum"; }
+
+/* ── Action list ── */
+.action-list { list-style: none; padding: 0; }
+.action-list li { padding: 14px 18px; margin-bottom: 10px; border-radius: 10px;
+                  border-left: 5px solid; display: flex; align-items: flex-start; gap: 14px; }
+.action-high { background: #fef2f2; border-color: #dc2626; }
+.action-mid { background: #fffbeb; border-color: #f59e0b; }
+.action-low { background: #f0fdf4; border-color: #10b981; }
+.action-list .num { font-weight: 700; font-size: 14px; min-width: 28px; color: #64748b; }
+.action-list .txt { flex: 1; }
+.action-list .reason { font-size: 13px; color: #8896ab; margin-top: 3px; }
+
+/* ── Trends ── */
+.trend-up { color: #dc2626; font-weight: 600; }
+.trend-down { color: #059669; font-weight: 600; }
+.trend-flat { color: #94a3b8; }
+
+/* ── Fold ── */
+.fold { margin-top: 16px; }
+.fold summary { cursor: pointer; font-weight: 600; color: #8896ab;
+               padding: 10px 0; font-size: 14px; transition: color .2s; }
+.fold[open] summary { color: #0f1b2d; }
+
+/* ── Gauge ── */
+.l0-gauge { display: flex; align-items: center; gap: 24px; margin: 14px 0; }
+.l0-gauge .bar-wrap { flex: 1; height: 14px; background: #e2e8f0; border-radius: 10px;
+                      position: relative; overflow: hidden; }
+.l0-gauge .bar { height: 100%; border-radius: 10px; transition: width .8s ease; }
+.l0-gauge .bar-label { position: absolute; right: 6px; top: -1px; line-height: 16px;
+                       font-size: 10px; font-weight: 700; color: #fff; }
+
+/* ── Dimensions ── */
+.l0-dims { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.l0-dim { flex: 1; min-width: 120px; padding: 18px 14px; text-align: center;
+          border-radius: 10px; border: 1px solid #e6edf5; }
+
+.l0-dim .dim-val { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+.l0-dim .dim-lbl { font-size: 12px; color: #8896ab; margin-top: 4px; font-weight: 500; }
+
+/* ── Charts ── */
+.chart-wrap { background: #f8f9fb; border-radius: 8px; padding: 16px; margin-top: 10px; position: relative; }
 .chart-wrap svg { display: block; width: 100%; height: auto; }
 .chart-ref-line { stroke-dasharray: 4,3; stroke-width: 1.5; }
-.chart-ref-label { font-size: 10px; fill: #6b7280; }
+.chart-ref-label { font-size: 3px; fill: #94a3b8; }
 .chart-line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .chart-area { stroke: none; }
 .chart-dot { stroke: #fff; stroke-width: 1.5; cursor: pointer; }
-.chart-dot:hover { r: 6; }
-.chart-axis text { font-size: 10px; fill: #6b7280; }
+.chart-axis text { font-size: 3px; fill: #94a3b8; }
 .chart-axis line, .chart-axis path { stroke: #d1d5db; stroke-width: 1; }
 .chart-grid line { stroke: #e5e7eb; stroke-width: 0.5; stroke-dasharray: 2,2; }
+
+/* ── Chart summary inline ── */
+.chart-summary { font-size: 13px; font-weight: 500; color: #475569;
+                 display: flex; gap: 16px; flex-wrap: wrap; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .grid-2, .grid-4 { grid-template-columns: 1fr 1fr; }
+  .l0-dims { flex-direction: column; }
+  .container { padding: 16px; }
+  body { font-size: 14px; }
+}
+@media print { .card { break-inside: avoid; } }
 </style>"""
 
 def _html_header(date: str) -> str:
@@ -170,9 +223,10 @@ def _html_header(date: str) -> str:
 </head>
 <body>
 <div class="container">
+<div class="report-body">
 <div class="header">
   <h1>📊 量化日报 · {date}</h1>
-  <div class="sub">狙击手 V3.7 ｜ 生成时间 {dt.datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+  <div class="sub">狙击手 V3.7 ｜ {dt.datetime.now().strftime('%Y-%m-%d %H:%M')} 生成 ｜ 数据仅供参考，不构成投资建议</div>
 </div>
 <div class="refresh-bar">
   <span id="status-text" class="status-ok">● 就绪</span>
@@ -181,7 +235,8 @@ def _html_header(date: str) -> str:
   <span id="refresh-tip" class="refresh-tip"></span>
 </div>"""
 
-_HTML_FOOTER = """<script>
+_HTML_FOOTER = """</div>
+<script>
 const API = 'http://localhost:8765';
 
 async function doRefresh() {
@@ -311,7 +366,7 @@ def collect_l0_weekly(date: str, weeks: int = 52) -> list[dict]:
         entry = weekly_map[wk]
         avg = sum(entry["scores"]) / len(entry["scores"])
         result.append({
-            "week_label": f"{wk[0]}W{wk[1]:02d}",
+            "week_label": f"{str(wk[0])[2:]}W{wk[1]:02d}",
             "avg_l0": round(avg, 1),
             "daily_l0s": [round(s, 1) for s in entry["scores"]],
             "n_days": len(entry["scores"]),
@@ -503,12 +558,12 @@ def section_executive_summary(l0_info: dict, positions: dict,
 
     parts = [
         f'<div class="card">',
-        f'<div class="card-title">📋 一、执行摘要</div>',
+        f'<div class="card-title">📋 一、市场总览</div>',
         # L0 主判断
         f'<div class="l0-gauge">',
         f'  <span style="font-size:28px">{icon}</span>',
         f'  <div style="flex:1">',
-        f'    <div style="font-size:16px;font-weight:600;color:{color}">{grade} · 合成评分 {composite:.1f}</div>',
+        f'    <div style="font-size:16px;font-weight:600;color:{color}">{grade} · 大盘温度 {composite:.1f}</div>',
         f'    <div class="bar-wrap" style="margin-top:4px">',
         f'      <div class="bar" style="width:{composite:.0f}%;background:{color}"></div>',
         f'      <span class="bar-label">{composite:.0f}</span>',
@@ -564,7 +619,7 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
 
     # ── 坐标映射 ──
     W, H = 800, 260
-    ML, MR, MT, MB = 50, 20, 20, 40  # margins
+    ML, MR, MT, MB = 50, 42, 20, 50  # margins
     plot_w = W - ML - MR
     plot_h = H - MT - MB
 
@@ -602,10 +657,10 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
     step = max(1, n // 12)
     x_labels = "\n".join(
         f'<text x="{x_idx(i):.1f}" y="{H - MB + 16}" text-anchor="end" '
-        f'transform="rotate(-30,{x_idx(i):.1f},{H - MB + 8})" class="chart-axis">{labels[i]}</text>'
+        f'transform="rotate(-90,{x_idx(i):.1f},{H - MB + 8})" class="chart-axis">{labels[i]}</text>'
         for i in range(0, n, step)
     ) + (f'\n<text x="{x_idx(n - 1):.1f}" y="{H - MB + 16}" text-anchor="end" '
-         f'transform="rotate(-30,{x_idx(n - 1):.1f},{H - MB + 8})" class="chart-axis" '
+         f'transform="rotate(-90,{x_idx(n - 1):.1f},{H - MB + 8})" class="chart-axis" '
          f'font-weight="bold">{labels[-1]}</text>' if (n - 1) % step != 0 else "")
 
     # ── 折线路径 ──
@@ -636,7 +691,7 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
             # 本周标记
             dots += (
                 f'<text x="{x_idx(i):.1f}" y="{y_val(v) - 10:.1f}" text-anchor="middle" '
-                f'fill="#dc2626" font-size="11" font-weight="700">{v:.1f}</text>'
+                f'fill="#dc2626" font-size="10" font-weight="700">{v:.1f}</text>'
             )
 
     # ── 底部统计摘要 ──
@@ -665,7 +720,7 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
         trend_desc = "震荡 ⚖️"
 
     summary_line = (
-        f'<div style="font-size:12px;color:#6b7280;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">'
+        f'<div class="chart-summary">'
         f'<span>周线趋势: <strong style="color:{dir_color}">{direction} {current_l0:.1f}</strong> 上周 {prev_l0:.1f}</span>'
         f'<span>方向判断: {trend_desc}</span>'
         f'<span>近 {n} 周均值: <strong>{sum(vals)/n:.1f}</strong></span>'
@@ -674,8 +729,11 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
 
     svg = (
         f'<div class="chart-wrap">'
-        f'<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#1a1a2e">'
-        f'📅 L0 周线趋势（近 {n} 周）</div>'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        f'<div style="font-size:13px;font-weight:600;color:#334155">'
+        f'📅 趋势全景 · 周线（近 {n} 周）</div>'
+        f'{summary_line}'
+        f'</div>'
         f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg">'
         f'<defs><clipPath id="chart-clip"><rect x="{ML}" y="{MT}" width="{plot_w}" height="{plot_h}" /></clipPath></defs>'
         f'{y_grid}'
@@ -685,7 +743,6 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
         f'<line x1="{ML}" y1="{MT}" x2="{ML}" y2="{H - MB}" class="chart-axis" />'
         f'<line x1="{ML}" y1="{H - MB}" x2="{W - MR}" y2="{H - MB}" class="chart-axis" />'
         f'</svg>'
-        f'{summary_line}'
         f'</div>'
     )
 
@@ -695,13 +752,13 @@ def _render_l0_weekly_chart(l0_weekly: list[dict]) -> str:
 def _render_l0_daily_chart(l0_daily: list[dict]) -> str:
     """生成 L0 日线 SVG 折线图 HTML。
 
-    展示最近 30 个交易日的 L0 合成评分，带各维度堆叠或显示切换。
+    展示最近 30 个交易日的 大盘温度，带各维度堆叠或显示切换。
     """
     if not l0_daily or len(l0_daily) < 2:
         return ""
 
     W, H = 800, 240
-    ML, MR, MT, MB = 50, 20, 20, 40
+    ML, MR, MT, MB = 50, 42, 20, 50
     plot_w = W - ML - MR
     plot_h = H - MT - MB
 
@@ -739,10 +796,10 @@ def _render_l0_daily_chart(l0_daily: list[dict]) -> str:
     step = max(1, n // 10)
     x_labels = "\n".join(
         f'<text x="{x_idx(i):.1f}" y="{H - MB + 16}" text-anchor="end" '
-        f'transform="rotate(-30,{x_idx(i):.1f},{H - MB + 8})" class="chart-axis">{labels[i]}</text>'
+        f'transform="rotate(-90,{x_idx(i):.1f},{H - MB + 8})" class="chart-axis">{labels[i]}</text>'
         for i in range(0, n, step)
     ) + (f'\n<text x="{x_idx(n - 1):.1f}" y="{H - MB + 16}" text-anchor="end" '
-         f'transform="rotate(-30,{x_idx(n - 1):.1f},{H - MB + 8})" class="chart-axis" '
+         f'transform="rotate(-90,{x_idx(n - 1):.1f},{H - MB + 8})" class="chart-axis" '
          f'font-weight="bold">{labels[-1]}</text>' if (n - 1) % step != 0 else "")
 
     # 折线
@@ -770,30 +827,34 @@ def _render_l0_daily_chart(l0_daily: list[dict]) -> str:
         if is_last:
             dots += (
                 f'<text x="{x_idx(i):.1f}" y="{y_val(v) - 10:.1f}" text-anchor="middle" '
-                f'fill="#dc2626" font-size="11" font-weight="700">{v:.1f}</text>'
+                f'fill="#dc2626" font-size="10" font-weight="700">{v:.1f}</text>'
             )
 
     # 底部统计
     current_l0 = vals[-1]
     prev_l0 = vals[-2] if n >= 2 else current_l0
     direction = "↑" if current_l0 > prev_l0 else ("↓" if current_l0 < prev_l0 else "→")
+    dir_color = "#dc2626" if direction == "↑" else ("#16a34a" if direction == "↓" else "#6b7280")
 
     # 近 5 日趋势
     last_5 = vals[-5:] if n >= 5 else vals
     trend_5 = "上升" if last_5[-1] > last_5[0] else ("下降" if last_5[-1] < last_5[0] else "持平")
 
     summary_line = (
-        f'<div style="font-size:12px;color:#6b7280;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">'
-        f'<span>日线趋势: <strong>{direction} {current_l0:.1f}</strong> 前日 {prev_l0:.1f}</span>'
-        f'<span>近5日: {trend_5}</span>'
+        f'<div class="chart-summary">'
+        f'<span>日线趋势: <strong style="color:{dir_color}">{direction} {current_l0:.1f}</strong> 前日 {prev_l0:.1f}</span>'
+        f'<span>近5日: <strong style="color:{dir_color}">{trend_5}</strong></span>'
         f'<span>近 {n} 日区间: [{min(vals):.1f} ~ {max(vals):.1f}]</span>'
         f'</div>'
     )
 
     svg = (
         f'<div class="chart-wrap" style="margin-top:12px">'
-        f'<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#1a1a2e">'
-        f'📈 L0 日线趋势（近 {n} 个交易日）</div>'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        f'<div style="font-size:13px;font-weight:600;color:#334155">'
+        f'📈 每日脉搏 · 日线（近 {n} 个交易日）</div>'
+        f'{summary_line}'
+        f'</div>'
         f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg">'
         f'<defs><clipPath id="daily-chart-clip"><rect x="{ML}" y="{MT}" width="{plot_w}" height="{plot_h}" /></clipPath></defs>'
         f'{y_grid}'
@@ -803,7 +864,6 @@ def _render_l0_daily_chart(l0_daily: list[dict]) -> str:
         f'<line x1="{ML}" y1="{MT}" x2="{ML}" y2="{H - MB}" class="chart-axis" />'
         f'<line x1="{ML}" y1="{H - MB}" x2="{W - MR}" y2="{H - MB}" class="chart-axis" />'
         f'</svg>'
-        f'{summary_line}'
         f'</div>'
     )
 
@@ -829,10 +889,10 @@ def section_market_depth(l0_info: dict, l0_trend: list[float],
 
     # L0 各维度
     dims = [
-        ("趋势", l0_info.get("trend", 0), cfg.MARKET.trend_weight),
-        ("量能", l0_info.get("volume", 0), cfg.MARKET.volume_weight),
-        ("宽度", l0_info.get("breadth", 0), cfg.MARKET.breadth_weight),
-        ("北向", l0_info.get("northbound", 0), cfg.MARKET.northbound_weight),
+        ("方向强度", l0_info.get("trend", 0), cfg.MARKET.trend_weight),
+        ("资金活力", l0_info.get("volume", 0), cfg.MARKET.volume_weight),
+        ("个股参与度", l0_info.get("breadth", 0), cfg.MARKET.breadth_weight),
+        ("外资动向", l0_info.get("northbound", 0), cfg.MARKET.northbound_weight),
     ]
     dim_html = []
     for name, val, w in dims:
@@ -848,7 +908,7 @@ def section_market_depth(l0_info: dict, l0_trend: list[float],
         top5 = l1_df.head(cfg.SECTOR.top_n_high)
         sec_html = '<div class="table-wrap"><table><tr><th>#</th><th>板块</th><th>综合</th><th>动量</th><th>资金</th><th>广度</th><th>热度</th></tr>'
         for _, row in top5.iterrows():
-            sec_html += f"<tr><td>{int(row['rank'])}</td><td><strong>{row['industry_name']}</strong></td>"
+            sec_html += f"<tr><td>{int(row['rank'])}</td><td>{row['industry_name']}</td>"
             for k in ["composite", "momentum", "fund_flow", "breadth", "heat"]:
                 v = row.get(k, 0)
                 if pd.notna(v):
@@ -871,7 +931,7 @@ def section_market_depth(l0_info: dict, l0_trend: list[float],
             l0_open_l2 = composite >= cfg.MARKET.bullish_threshold
             score_pass = score >= cfg.ENTRY.soft_min_score
             if score_pass and l0_open_l2:
-                suggestion, tag_cls = ("买入", "green")
+                suggestion, tag_cls = ("买入", "red")
             elif score_pass:
                 suggestion, tag_cls = ("等待L0", "yellow")
             else:
@@ -906,9 +966,9 @@ def section_market_depth(l0_info: dict, l0_trend: list[float],
 
     return f"""
 <div class="card">
-  <div class="card-title">📈 二、市场深度分析</div>
+  <div class="card-title">🔍 二、行情解码</div>
 
-  <div style="font-weight:600;font-size:14px;color:{color}">L0 合成评分 {icon} {composite:.1f} — {grade}</div>
+  <div style="font-weight:600;font-size:14px;color:{color}">大盘温度 {icon} {composite:.1f} — {grade}</div>
   <div style="font-size:12px;color:#6b7280;margin:4px 0 8px">{trend_l0}</div>
 
   <div class="l0-dims">{"".join(dim_html)}</div>
@@ -918,12 +978,12 @@ def section_market_depth(l0_info: dict, l0_trend: list[float],
   {_render_l0_daily_chart(l0_daily)}
 
   <details class="fold" {"open" if l1_df is not None and not l1_df.empty else ""}>
-  <summary>L1 强势板块</summary>
+  <summary>领涨板块</summary>
   {sec_html or '<div style="color:#6b7280;padding:8px">无板块数据</div>'}
   </details>
 
   <details class="fold" {"open" if candidates else ""}>
-  <summary>L2 候选个股及买卖建议</summary>
+  <summary>精选标的</summary>
   {stock_html}
   </details>
 </div>"""
@@ -957,7 +1017,7 @@ def section_portfolio_advice(l0_info: dict, positions: dict, l4_warnings: list[d
         f'<span style="font-size:20px">{icon}</span>'
         f'<div><strong>L0 {composite:.0f} — {grade}</strong>'
         f'{" 通过开仓线 " if l0_open else " 未达开仓线 "}'
-        f'<code style="background:#e5e7eb;padding:1px 6px;border-radius:3px;font-size:12px">L0≥{cfg.MARKET.bullish_threshold:.0f}</code>'
+        f'<code style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700">L0≥{cfg.MARKET.bullish_threshold:.0f}</code>'
         f'{" · 可开新仓" if l0_open else " · 不开新仓"}</div></div>'
     )
 
@@ -979,7 +1039,7 @@ def section_portfolio_advice(l0_info: dict, positions: dict, l4_warnings: list[d
 
         return f"""
 <div class="card">
-  <div class="card-title">💼 三、持仓与交易建议</div>
+  <div class="card-title">🧭 三、持仓导航</div>
   {l0_line}
   <div style="color:#6b7280;padding:8px 0">今日无持仓变动</div>
   {pending_html}
@@ -1007,9 +1067,9 @@ def section_portfolio_advice(l0_info: dict, positions: dict, l4_warnings: list[d
             mode = warning.get("mode", "止损")
             # 模式标签（止损🔴 / 动态止盈🟠）
             if mode == "止损":
-                mode_tag = '<span style="color:#dc2626;font-weight:700;font-size:12px">⬇ 止损</span>'
+                mode_tag = '<span style="color:#dc2626;font-weight:500;font-size:12px">⬇ 止损</span>'
             else:
-                mode_tag = '<span style="color:#ea580c;font-weight:700;font-size:12px">⬆ 动态止盈</span>'
+                mode_tag = '<span style="color:#ea580c;font-weight:500;font-size:12px">⬆ 动态止盈</span>'
             # 风控列：背景色 + 距离百分比
             if dist < 0.01:
                 dist_str = "⚠️ 已触发"
@@ -1054,13 +1114,13 @@ def section_portfolio_advice(l0_info: dict, positions: dict, l4_warnings: list[d
             f"<td>{pos.get('score',0):.0f}</td>"
             f"<td>{entry_price:.2f}</td>"
             f"<td>{close_price:.2f}</td>"
-            f"<td style='font-weight:700;text-align:center'>{stop_price_val:.2f}<br>{mode_tag}</td>"
+            f"<td style='font-weight:500;text-align:center'>{stop_price_val:.2f}<br>{mode_tag}</td>"
             f"<td style='{risk_style};text-align:center'>{dist_str}</td>"
             f"<td style='color:{advice_color};font-size:12px'>{advice_full}</td>"
             f"</tr>"
         )
 
-    # L4 退出预警摘要
+    # 风控雷达摘要
     warn_rows = ""
     for w in l4_warnings:
         sig = w.get("signal")
@@ -1073,7 +1133,7 @@ def section_portfolio_advice(l0_info: dict, positions: dict, l4_warnings: list[d
     if warn_rows:
         warn_html = f"""
 <details class="fold" open>
-  <summary>⚠️ L4 退出预警</summary>
+  <summary>⚠️ 风控雷达</summary>
   <div class="table-wrap"><table>
     <tr><th>股票</th><th>信号</th><th>盈亏</th><th>状态</th></tr>
     {warn_rows}
@@ -1099,7 +1159,7 @@ def section_portfolio_advice(l0_info: dict, positions: dict, l4_warnings: list[d
 
     return f"""
 <div class="card">
-  <div class="card-title">💼 三、持仓与交易建议</div>
+  <div class="card-title">🧭 三、持仓导航</div>
   {l0_line}
   <div class="table-wrap"><table>
     <tr><th>股票</th><th>盈亏</th><th>板块</th><th>评分</th><th>入场价</th><th>现价</th><th>止盈/止损</th><th>风控</th><th>建议</th></tr>
@@ -1145,7 +1205,7 @@ def section_trades(trades: dict) -> str:
             f"</tr>"
         )
 
-    parts = ['<div class="card"><div class="card-title">📝 四、日内交易记录</div>']
+    parts = ['<div class="card"><div class="card-title">📝 四、交易流水</div>']
 
     if sells:
         parts.append(f'<details class="fold" open>')
@@ -1167,9 +1227,9 @@ def section_trades(trades: dict) -> str:
 
 def section_appendix(l0_info: dict, attribution: dict,
                       ds_report: dict, date: str) -> str:
-    """附录：打字机归因 + 参数 + 数据源状态"""
+    """附录：策略归因 + 参数 + 数据健康"""
 
-    # 打字机归因
+    # 策略归因
     attr_html = ""
     if attribution.get("status") == "ok":
         fp = attribution["fingerprint"]
@@ -1180,7 +1240,7 @@ def section_appendix(l0_info: dict, attribution: dict,
         )
         attr_html = f"""
 <details class="fold" open>
-<summary>打字机归因</summary>
+<summary>策略归因</summary>
 <div style="padding:8px 0;font-size:13px">
   市场指纹: [{fp[0]:.1f}, {fp[1]:.1f}, {fp[2]:.1f}, {fp[3]:.1f}]<br>
   近邻: {attribution['neighbors']} 笔 ｜ 平均 PnL: {attribution['avg_pnl']*100:+.2f}%
@@ -1188,7 +1248,7 @@ def section_appendix(l0_info: dict, attribution: dict,
 {"" if not param_rows else f'<div class="table-wrap"><table><tr><th>参数</th><th>归因值</th></tr>{param_rows}</table></div>'}
 </details>"""
     elif attribution.get("status") == "skip":
-        attr_html = f'<details class="fold"><summary>打字机归因</summary><div style="color:#6b7280;padding:8px">{attribution.get("reason","")}</div></details>'
+        attr_html = f'<details class="fold"><summary>策略归因</summary><div style="color:#6b7280;padding:8px">{attribution.get("reason","")}</div></details>'
 
     # 参数配置
     config_sections = [
@@ -1206,7 +1266,7 @@ def section_appendix(l0_info: dict, attribution: dict,
                 v = getattr(obj, k)
                 config_rows += f"<tr><td>{sec_name}</td><td>{k}</td><td>{v}</td></tr>"
 
-    # 数据源状态
+    # 数据健康
     ds_html = ""
     _ICON = {"ok": "🟢", "warn": "🟠", "error": "🔴"}
     if ds_report and "error" not in ds_report:
@@ -1217,7 +1277,7 @@ def section_appendix(l0_info: dict, attribution: dict,
         gap = ds_report.get("universe_gap", {})
 
         ds_lines = [
-            f'<div style="font-size:13px;padding:4px 0">L2 评分: {mode_icon} <code>{mode}</code> — {sm.get("source","?")}</div>',
+            f'<div style="font-size:13px;padding:4px 0">L2 评分: {mode_icon} <code>{mode}</code></div>',
         ]
         if pc.get("available"):
             ds_lines.append(
@@ -1259,7 +1319,7 @@ def section_appendix(l0_info: dict, attribution: dict,
   </details>
 
   <details class="fold" open>
-  <summary>数据源状态</summary>
+  <summary>数据健康</summary>
   {ds_html}
   <div style="font-size:12px;color:#6b7280;margin-top:8px">
     运行 <code>python scripts/precompute_l2.py</code> 更新预计算因子 ｜
@@ -1340,7 +1400,7 @@ def generate_html(date: str) -> str:
         top_sectors = l1_df.head(cfg.SECTOR.top_n_high)["industry_name"].tolist()
     candidates, sector_ranks = collect_l2(date, top_sectors)
 
-    # 5. L4 退出预警
+    # 5. 风控雷达
     l4_warnings = collect_l4_warnings(positions, date)
 
     # 6. 交易记录
