@@ -1,7 +1,8 @@
 """信号数据表 schema — 写入与 LocalDataWarehouse 相同的 SQLite 文件"""
 
-# 数据库路径（与 LocalDataWarehouse 共享）
-DB_FILE = "data/local/meta.db"
+# 数据库路径（与 LocalDataWarehouse 共享，优先 META_DB_PATH 环境变量）
+import os as _os
+DB_FILE = _os.environ.get("META_DB_PATH", r"D:\quant_data\meta.db")
 
 # ── 信号表 DDL ──
 

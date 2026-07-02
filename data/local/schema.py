@@ -9,7 +9,9 @@ from core.logger import get_logger
 logger = get_logger("data.local.schema")
 
 # 数据库文件路径
-DB_FILE = "data/local/meta.db"
+# 优先使用环境变量 META_DB_PATH，否则使用默认路径 D:\quant_data\meta.db
+import os as _os
+DB_FILE = _os.environ.get("META_DB_PATH", r"D:\quant_data\meta.db")
 
 # ── DDL ──
 

@@ -26,7 +26,7 @@ class SignalStore:
     """
 
     def __init__(self, db_path: str | Path | None = None):
-        self.db_path = Path(db_path or PROJECT_ROOT / DB_FILE)
+        self.db_path = Path(db_path or DB_FILE)
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:

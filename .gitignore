@@ -8,3 +8,6 @@ output/
 .vscode/
 *.parquet
 .claude/
+data/local/meta.db*
+data/local/*.db
+outputs/reports/

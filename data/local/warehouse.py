@@ -27,7 +27,7 @@ class LocalDataWarehouse:
     """本地数据仓库 — 所有数据从 SQLite 读写。"""
 
     def __init__(self, db_path: str | Path | None = None):
-        self.db_path = Path(db_path or PROJECT_ROOT / DB_FILE)
+        self.db_path = Path(db_path or DB_FILE)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -138,7 +138,7 @@ class LocalDataWarehouse:
         Fix L: filter_col 白名单校验，防 SQL 注入。
         """
         # 白名单：已知合法列名
-        _ALLOWED_COLS = {"symbol", "date", "code", "index_code"}
+        _ALLOWED_COLS = {"symbol", "date", "code", "index_code", "name"}
         if filter_col not in _ALLOWED_COLS:
             raise ValueError(f"filter_col '{filter_col}' 不在白名单 {_ALLOWED_COLS} 中")
         conn = self._connect()
