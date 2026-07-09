@@ -260,17 +260,27 @@ def _sync_with_intelligence(
             pass
 
     # 4. 刷新轻量表（每轮都做，快）
+    # 各表独立 try/except，防止一个失败阻断其他更新
+    from data.local.updater import (
+        update_stock_list, update_trade_calendar,
+        update_market_indices, update_sw_indices,
+    )
     try:
-        from data.local.updater import (
-            update_stock_list, update_trade_calendar,
-            update_market_indices, update_sw_indices,
-        )
         update_stock_list(wh)
+    except Exception as e:
+        logger.warning(f"[①] stock_list 更新异常（继续）: {e}")
+    try:
         update_trade_calendar(wh)
+    except Exception as e:
+        logger.warning(f"[①] trade_calendar 更新异常（继续）: {e}")
+    try:
         update_market_indices(wh, end=today)
+    except Exception as e:
+        logger.warning(f"[①] market_indices 更新异常（继续）: {e}")
+    try:
         update_sw_indices(wh, end=today)
     except Exception as e:
-        logger.warning(f"[①] 轻量表更新异常（继续）: {e}")
+        logger.warning(f"[①] sw_indices 更新异常（继续）: {e}")
 
     # 5. 个股日线 — 带跳过列表
     try:
@@ -847,14 +857,23 @@ def _sync_until_deadline(today: str) -> tuple[float, int]:
             logger.info(f"[intraday] 到达终裁时间 {data_end}")
             break
 
-        # 轻量表每轮更新
+        # 轻量表每轮更新（各表独立 try，防阻断）
         try:
             update_stock_list(wh)
+        except Exception as e:
+            logger.warning(f"[intraday] stock_list 更新异常（继续）: {e}")
+        try:
             update_trade_calendar(wh)
+        except Exception as e:
+            logger.warning(f"[intraday] trade_calendar 更新异常（继续）: {e}")
+        try:
             update_market_indices(wh, end=today)
+        except Exception as e:
+            logger.warning(f"[intraday] market_indices 更新异常（继续）: {e}")
+        try:
             update_sw_indices(wh, end=today)
         except Exception as e:
-            logger.warning(f"[intraday] 轻量表更新异常: {e}")
+            logger.warning(f"[intraday] sw_indices 更新异常（继续）: {e}")
 
         # 日线拉取截止守卫
         if now >= sync_cutoff:
