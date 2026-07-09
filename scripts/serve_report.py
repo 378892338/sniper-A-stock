@@ -27,6 +27,7 @@ import json
 import signal
 import subprocess
 import threading
+import time
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
@@ -194,7 +195,8 @@ class ReportHandler(BaseHTTPRequestHandler):
                 logger.info("触发管道重跑...")
                 proc = subprocess.Popen(
                     [python, "-m", "scripts.run_pipeline"],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, encoding="utf-8", errors="replace",
                     cwd=str(ROOT),
                 )
                 with _current_proc_lock:
