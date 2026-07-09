@@ -38,7 +38,7 @@ logger = get_logger("serve_report")
 
 HOST = "localhost"
 PORT = 8765
-OBSIDIAN_DIR = Path("D:/Obsidian/SecondBrain/02-Projects/05-量化系统")
+OBSIDIAN_DIR = Path("D:/Obsidian/SecondBrain/000-Projects/05-量化系统")
 LAST_RUN_FILE = ROOT / "outputs/reports/last_run.json"
 
 # 运行状态
