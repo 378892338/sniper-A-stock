@@ -278,7 +278,12 @@ class Fetcher:
                 from data.quality import validate_download
                 problems = validate_download(df, symbol)
                 if problems:
-                    logger.warning(f"{symbol} 数据问题: {', '.join(problems[:2])}")
+                    # 2026-07-10 Fix: 脏数据写入前拦截 — 弃用当前源 + 健康分扣 + 继续 fallback
+                    self._incr_fail(src_name)
+                    if ep:
+                        health_tracker.record_failure(ep)
+                    logger.warning(f"{symbol} 脏数据拦截 [{src_name}]: {', '.join(problems[:2])} → 继续下一源")
+                    continue
             except ImportError:
                 pass
             return df
