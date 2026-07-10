@@ -133,3 +133,10 @@ from data.sources.eastmoney_dt import EastMoneyDTSource
 register_source("eastmoney_dt", EastMoneyDTSource)
 
 # mootdx 实时行情（12:00 盘中专用）— 不注册为 DataSource（非 ABC 实现，直接用 import）
+
+# Tencent 实时行情（仅当日数据，volume 完整，免费）— 2026-07-10 注册
+try:
+    from data.sources.tencent import TencentDataSource
+    register_source("tencent", TencentDataSource)
+except ImportError:
+    pass

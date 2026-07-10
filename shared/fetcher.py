@@ -53,6 +53,7 @@ SOURCE_ENDPOINTS = {
     "jqdata": "jqdata_price",
     "mootdx": "mootdx_price",
     "10jqka": "10jqka_price",
+    "tencent": "tencent_price",  # 2026-07-10 新增: TencentDataSource 实时行情 endpoint
 }
 
 # 通用超时配置（Fix K: 可配置，默认 15s）
@@ -237,6 +238,8 @@ class Fetcher:
                 except TimeoutError:
                     _ft.cancel()
                     self._incr_fail(src_name)
+                    if ep:
+                        health_tracker.record_failure(ep)
                     logger.debug(f"{symbol}: {src_name} 超时 ({self.guard.timeout}s)")
                     _pool.shutdown(wait=False)
                     continue
@@ -245,11 +248,15 @@ class Fetcher:
             except Exception as e:
                 last_error = e
                 self._incr_fail(src_name)
+                if ep:
+                    health_tracker.record_failure(ep)
                 logger.debug(f"{symbol}: {src_name} 失败 ({self._get_fail_count(src_name)}连败): {e}")
                 continue
 
             if raw is None or raw.empty:
                 self._incr_fail(src_name)
+                if ep:
+                    health_tracker.record_failure(ep)
                 logger.debug(f"{symbol}: {src_name} 空数据")
                 continue
 
@@ -257,10 +264,14 @@ class Fetcher:
                 df = normalize(raw, symbol, src_name)
             except Exception as e:
                 self._incr_fail(src_name)
+                if ep:
+                    health_tracker.record_failure(ep)
                 logger.debug(f"{symbol}: Normalizer 失败 ({e})")
                 continue
 
             self._reset_fail(src_name)
+            if ep:
+                health_tracker.record_success(ep)
             used_source = src_name
 
             try:
