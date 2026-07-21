@@ -268,13 +268,19 @@ def _build_paper_tape(combos: list, results: list) -> dict | None:
     vector_df = df["market_state_vector"].apply(pd.Series)
     vector_df.columns = ["msv_l0", "msv_trend", "msv_volume", "msv_breadth"]
 
+    # 全量 Config 参数快照（116 个字段）
+    from sniper.config import snapshot_all_params
+    all_params = snapshot_all_params()
+    config_flat = pd.DataFrame([all_params] * len(df))
+
     df_flat = pd.concat([
         df.drop(columns=["params", "market_state_vector"]),
         params_expanded,
         vector_df,
+        config_flat,
     ], axis=1)
     df_flat.to_parquet(tape_path, index=False)
-    logger.info(f"纸带已写入: {tape_path} ({len(df_flat)} 笔交易)")
+    logger.info(f"纸带已写入: {tape_path} ({len(df_flat)} 笔交易, {len(df_flat.columns)} 列)")
 
     # 保存参数组合明细（用于复现）
     (OUTPUT_DIR / "run_params.json").write_text(

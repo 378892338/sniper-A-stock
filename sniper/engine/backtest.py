@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 
 import sniper.config as CFG
+from sniper.config import configure_for_today, load_paper_tape, append_to_paper_tape, _TRADE_PAPER, snapshot_all_params
 from sniper.data_router import DataRouter
 from sniper.layers.l0_market import MarketScorer
 from sniper.layers.l1_sector import SectorScorer, FusionOrchestrator
@@ -395,6 +396,25 @@ class BacktestEngine:
             l0_info = self._l0_cache.get(prev_date, self.market.score_all(prev_date))
             l0_score = l0_info["composite"]
 
+            # ── 飞轮闭环：每日开盘前归因 ──
+            # 用今天的市场指纹在纸带中找最近邻 → 归因 → 更新全局参数
+            # 使得回测过程也模拟实盘的参数动态调整
+            if _TRADE_PAPER is None or len(_TRADE_PAPER) < 10:
+                try:
+                    load_paper_tape()
+                except Exception:
+                    pass
+            if _TRADE_PAPER is not None and len(_TRADE_PAPER) >= 10:
+                try:
+                    configure_for_today(
+                        l0_score=l0_info.get("composite", 50.0),
+                        l0_trend=l0_info.get("trend", 50.0),
+                        l0_volume=l0_info.get("volume", 50.0),
+                        l0_breadth=l0_info.get("breadth", 50.0),
+                    )
+                except Exception as e:
+                    logger.debug(f"[飞轮] {current_date} configure_for_today 跳过: {e}")
+
             # ── 自进化（月频校准，不涉及仓位缩放）──
             if self_evolve:
                 self._daily_self_evolve(current_date)
@@ -462,6 +482,29 @@ class BacktestEngine:
                                     last_trade["hold_days"] = 1
                                 last_trade["pnl_pct"] = last_trade.get("pnl", 0) / max(last_trade.get("cost", 1), 1)
                                 self._post_trade_hook(last_trade)
+
+                        # ── 飞轮闭环：平仓交易追加到纸带 ──
+                        if self_evolve and self.risk.trades:
+                            try:
+                                tape_trade = {
+                                    "params": snapshot_all_params(),
+                                    "pnl_pct": last_trade.get("pnl_pct", 0) if 'last_trade' in dir() else 0,
+                                    "l0_score": l0_info.get("composite", 50.0),
+                                    "l0_trend": l0_info.get("trend", 50.0),
+                                    "l0_volume": l0_info.get("volume", 50.0),
+                                    "l0_breadth": l0_info.get("breadth", 50.0),
+                                    "market_state_vector": [l0_info.get("composite", 50.0), l0_info.get("trend", 50.0), l0_info.get("volume", 50.0), l0_info.get("breadth", 50.0)],
+                                    "entry_date": last_trade.get("entry_date", current_date) if 'last_trade' in dir() else current_date,
+                                    "exit_date": current_date,
+                                    "hold_days": last_trade.get("hold_days", 1) if 'last_trade' in dir() else 1,
+                                    "exit_reason": reason,
+                                    "symbol": sym,
+                                }
+                                trade_entry_date = tape_trade["entry_date"]
+                                tape_trade["entry_date"] = trade_entry_date
+                                append_to_paper_tape(tape_trade)
+                            except Exception as e:
+                                logger.debug(f"[飞轮] 纸带追加跳过: {e}")
 
             # 清理停损记录
             if len(recent_stopped) > 50:

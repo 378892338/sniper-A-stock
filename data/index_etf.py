@@ -91,18 +91,45 @@ CONCEPT_TO_ETF = {
 
 def fetch_etf_index_data(etf_name: str, start: str, end: str,
                          source: str = "akshare") -> pd.DataFrame:
-    """获取单个ETF分类指数的日线数据"""
+    """获取单个ETF分类指数的日线数据
+
+    优先级:
+      L0) warehouse.index_daily (走 shared.cache，自动找 cache_key 命名的文件)
+      L1) data/raw/_cache/backtest/etf_daily_{name}.parquet (本地固定路径)
+      L2) 网络 (走代理，代理拦截时失败)
+    """
     info = ETF_INDEX_MAP.get(etf_name)
     if info is None:
         logger.warning(f"未知ETF指数: {etf_name}")
         return pd.DataFrame()
 
     code = info["code"]
+
+    # L1: 本地固定路径 cache (backtest/etf_daily_{name}.parquet)
+    from config.paths import DATA_RAW_DIR
+    local_path = DATA_RAW_DIR / "_cache" / "backtest" / f"etf_daily_{etf_name}.parquet"
+    if local_path.exists():
+        try:
+            df = pd.read_parquet(str(local_path))
+            if "date" not in df.columns and df.index.name == "date":
+                df = df.reset_index()
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+            df["name"] = etf_name
+            if start and end:
+                df = df[(df["date"] >= start) & (df["date"] <= end)]
+            logger.info(f"ETF[{etf_name}] 命中本地 cache: {len(df)} 行 ({local_path.name})")
+            return df
+        except Exception as e:
+            logger.debug(f"本地 cache 读取失败 {etf_name}: {e}")
+
+    # L0: warehouse / 旧 cache_key 路径
     cache_key = f"etf_index_{code}_{start}_{end}"
     cached = read_cache(cache_key, ttl_seconds=3600)
     if cached is not None and not cached.empty:
         return cached
 
+    # L2: 网络
     ds = get_source()
     try:
         df = ds.fetch_index_daily(code, start, end)

@@ -243,7 +243,7 @@ def run_backtest(start_date, end_date):
     engine.stock_scorer.top_stocks = cached_top_stocks
 
     t0 = time.time()
-    result = engine.run(start_date, end_date)
+    result = engine.run(start_date, end_date, self_evolve=True)
     elapsed = time.time() - t0
 
     trades = result.get("trades", [])

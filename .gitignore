@@ -49,3 +49,16 @@ outputs/reports/skip_list.json
 data/backtest_result*.json
 outputs/backtest_result*.json
 outputs/optimize_target/
+
+# 设计产出
+aletheia_design_*.html
+
+# 本地副本
+* - 副本.*
+*副本.*
+
+# 运行时锁
+*.lock
+
+# 产出日志
+outputs/*.log

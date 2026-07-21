@@ -271,11 +271,49 @@ DEGRADATION = DegradationConfig()
 
 import json as _json
 import os as _os
+import sqlite3 as _sqlite3
 import numpy as _np
 import pandas as _pd
 
 from core.logger import get_logger
 _logger = get_logger("sniper.config")
+
+# ── 纸带 sqlite 连接（延迟初始化） ──
+_TAPE_CONN: _sqlite3.Connection | None = None
+_TAPE_FLUSH_COUNT = 0
+_TAPE_FLUSH_THRESHOLD = 100
+
+def _get_tape_conn() -> _sqlite3.Connection:
+    """获取纸带 sqlite 连接的延迟初始化。"""
+    global _TAPE_CONN
+    if _TAPE_CONN is None:
+        try:
+            from config.paths import TAPE_DIR
+            db_path = TAPE_DIR / "paper_tape.db"
+        except ImportError:
+            db_path = "outputs/paper_tape.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        _TAPE_CONN = _sqlite3.connect(str(db_path))
+        _TAPE_CONN.execute("""
+            CREATE TABLE IF NOT EXISTS paper_tape (
+                row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pnl_pct REAL,
+                entry_date TEXT,
+                exit_date TEXT,
+                hold_days INTEGER,
+                exit_reason TEXT,
+                symbol TEXT,
+                l0_score REAL,
+                l0_trend REAL,
+                l0_volume REAL,
+                l0_breadth REAL,
+                config_snapshot TEXT DEFAULT '{}',
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        _TAPE_CONN.commit()
+        _logger.info(f"纸带 sqlite 已打开: {db_path}")
+    return _TAPE_CONN
 
 _TRADE_PAPER: list[dict] | None = None  # 纸带（内存缓存）
 _DISTANCE_WEIGHTS = [0.50, 0.20, 0.15, 0.15]  # L0, 趋势, 量能, 宽度
@@ -343,24 +381,36 @@ _PARAM_TO_CONFIG = {
 def load_paper_tape(path: str = "") -> None:
     """启动时加载纸带（一次调用）。
 
-    从展平 parquet 读取后，将 ConfigName_field 列重建为 all_params dict，
-    将 msv_l0/msv_trend/msv_volume/msv_breadth 重建为 market_state_vector list。
+    默认从 sqlite 读取（paper_tape.db），path_override 时从 parquet 读（测试兼容）。
+    将展平数据重建为 params / market_state_vector / all_params 嵌套结构。
     """
     global _TRADE_PAPER
-    if not path:
+
+    if path:
+        # path_override → 从 parquet 读（测试兼容）
+        if not _os.path.exists(path):
+            return
+        df = _pd.read_parquet(path)
+        records = df.to_dict("records")
+    else:
+        # 默认从 sqlite 读
+        conn = _get_tape_conn()
         try:
-            from config.paths import TAPE_DIR
-            path = _os.path.join(str(TAPE_DIR), "paper_tape.parquet")
-        except ImportError:
+            df = _pd.read_sql("SELECT * FROM paper_tape ORDER BY row_id", conn)
+        except Exception:
+            return
+        if df.empty:
+            return
+        records = df.to_dict("records")
+        # 合并 config_snapshot JSON 列
+        for r in records:
+            cs = r.pop("config_snapshot", "{}") or "{}"
             try:
-                from config.paths import OUTPUT_DIR
-                path = _os.path.join(str(OUTPUT_DIR), "optimize_target", "paper_tape.parquet")
-            except ImportError:
-                path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
-    if not _os.path.exists(path):
-        return
-    df = _pd.read_parquet(path)
-    records = df.to_dict("records")
+                all_p = _json.loads(cs)
+                if all_p:
+                    r["all_params"] = all_p
+            except Exception:
+                pass
 
     for r in records:
         # 重建 params dict：param_stop_loss → params["stop_loss"]（向后兼容）
@@ -374,18 +424,19 @@ def load_paper_tape(path: str = "") -> None:
                 r.pop("msv_l0"), r.pop("msv_trend", 50.0),
                 r.pop("msv_volume", 50.0), r.pop("msv_breadth", 50.0),
             ]
-        # 重建 all_params：所有 ConfigName_field 列 → all_params dict
-        all_p = {}
-        for k in list(r.keys()):
-            if k.startswith("MarketConfig_") or k.startswith("ExitConfig_") or \
-               k.startswith("RiskConfig_") or k.startswith("EntryConfig_") or \
-               k.startswith("BacktestConfig_") or k.startswith("SectorConfig_") or \
-               k.startswith("StockConfig_") or k.startswith("EtfMomentumConfig_") or \
-               k.startswith("FusionConfig_") or k.startswith("DdrConfig_") or \
-               k.startswith("DegradationConfig_"):
-                all_p[k] = r.pop(k)
-        if all_p:
-            r["all_params"] = all_p
+        # 重建 all_params：从 ConfigName_field 列（parquet 旧格式）
+        if "all_params" not in r:
+            all_p = {}
+            for k in list(r.keys()):
+                if k.startswith("MarketConfig_") or k.startswith("ExitConfig_") or \
+                   k.startswith("RiskConfig_") or k.startswith("EntryConfig_") or \
+                   k.startswith("BacktestConfig_") or k.startswith("SectorConfig_") or \
+                   k.startswith("StockConfig_") or k.startswith("EtfMomentumConfig_") or \
+                   k.startswith("FusionConfig_") or k.startswith("DdrConfig_") or \
+                   k.startswith("DegradationConfig_"):
+                    all_p[k] = r.pop(k)
+            if all_p:
+                r["all_params"] = all_p
 
     _TRADE_PAPER = records
     # 飞轮闭环：加载持久化参数（恢复上次归因结果）
@@ -395,23 +446,14 @@ def load_paper_tape(path: str = "") -> None:
 def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
     """将一笔完成的交易追加到纸带。
 
-    展平 params → param_xxx 列 + 展平 market_state_vector
-    + 展平全量 Config 参数（ConfigName_field）
-    → 读现存的 parquet → 追加 → 写回 → 更新内存缓存。
+    默认走 sqlite INSERT（O(1) IO，单笔 ~0.5ms）。
+    path_override 时走 parquet 全量重写（测试兼容）。
 
     Args:
         trade: 交易记录（必须含 params, market_state_vector, pnl_pct 等）
-        path_override: 测试时指定临时路径
+        path_override: 测试时指定临时 parquet 路径
     """
-    global _TRADE_PAPER
-    if path_override:
-        path = path_override
-    else:
-        try:
-            from config.paths import TAPE_DIR
-            path = _os.path.join(str(TAPE_DIR), "paper_tape.parquet")
-        except ImportError:
-            path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
+    global _TRADE_PAPER, _TAPE_FLUSH_COUNT
 
     # ── 展平 ──
     row: dict = {}
@@ -427,36 +469,82 @@ def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
     row["msv_volume"] = vec[2] if len(vec) > 2 else 50.0
     row["msv_breadth"] = vec[3] if len(vec) > 3 else 50.0
 
-    # 全量 Config 参数快照
-    row.update(snapshot_all_params())
+    # 全量 Config 参数快照 → JSON
+    config_snapshot = _json.dumps(snapshot_all_params(), ensure_ascii=False)
 
-    new_df = _pd.DataFrame([row])
-
-    # ── 读现有 + 追加 ──
-    if _os.path.exists(path):
-        existing = _pd.read_parquet(path)
-        # 对齐列（新行可能缺某些已有列）
-        for col in existing.columns:
-            if col not in new_df.columns:
-                new_df[col] = None
-        combined = _pd.concat([existing, new_df], ignore_index=True)
+    if path_override:
+        # ── path_override → 走 parquet 全量重写（测试兼容） ──
+        new_df = _pd.DataFrame([row])
+        if _os.path.exists(path_override):
+            existing = _pd.read_parquet(path_override)
+            for col in existing.columns:
+                if col not in new_df.columns:
+                    new_df[col] = None
+            combined = _pd.concat([existing, new_df], ignore_index=True)
+        else:
+            combined = new_df
+        combined.to_parquet(path_override, index=False)
     else:
-        combined = new_df
-
-    combined.to_parquet(path, index=False)
+        # ── 默认走 sqlite INSERT（O(1) IO） ──
+        conn = _get_tape_conn()
+        conn.execute(
+            """INSERT INTO paper_tape
+               (pnl_pct, entry_date, exit_date, hold_days, exit_reason, symbol,
+                l0_score, l0_trend, l0_volume, l0_breadth, config_snapshot)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                row.get("pnl_pct"),
+                row.get("entry_date", ""),
+                row.get("exit_date", ""),
+                row.get("hold_days", 0),
+                row.get("exit_reason", ""),
+                row.get("symbol", ""),
+                row.get("l0_score", 50.0),
+                row.get("l0_trend", 50.0),
+                row.get("l0_volume", 50.0),
+                row.get("l0_breadth", 50.0),
+                config_snapshot,
+            ),
+        )
+        _TAPE_FLUSH_COUNT += 1
+        if _TAPE_FLUSH_COUNT >= _TAPE_FLUSH_THRESHOLD:
+            conn.commit()
+            _TAPE_FLUSH_COUNT = 0
 
     # ── 更新内存缓存 ──
     if _TRADE_PAPER is not None:
-        reconstructed = new_df.to_dict("records")[0]
-        # 重建 params
-        param_keys = [k for k in reconstructed if k.startswith("param_")]
+        reconstructed = {
+            "pnl_pct": row.get("pnl_pct"),
+            "l0_score": row.get("l0_score", 50.0),
+            "l0_trend": row.get("l0_trend", 50.0),
+            "l0_volume": row.get("l0_volume", 50.0),
+            "l0_breadth": row.get("l0_breadth", 50.0),
+            "entry_date": row.get("entry_date", ""),
+            "exit_date": row.get("exit_date", ""),
+            "hold_days": row.get("hold_days", 0),
+            "exit_reason": row.get("exit_reason", ""),
+            "symbol": row.get("symbol", ""),
+            "market_state_vector": [
+                row.get("l0_score", 50.0), row.get("l0_trend", 50.0),
+                row.get("l0_volume", 50.0), row.get("l0_breadth", 50.0),
+            ],
+            "all_params": _json.loads(config_snapshot),
+        }
+        # 从 params 快照重建旧版 params 字段（向后兼容）
+        param_keys = [k for k in row if k.startswith("param_")]
         if param_keys:
-            reconstructed["params"] = {
-                k.replace("param_", ""): reconstructed.pop(k) for k in param_keys
-            }
-        # 重建 market_state_vector
-        if "msv_l0" in reconstructed:
-            reconstructed["market_state_vector"] = [
+            reconstructed["params"] = {k.replace("param_", ""): row[k] for k in param_keys}
+
+        _TRADE_PAPER.append(reconstructed)
+
+
+def flush_paper_tape() -> None:
+    """强制 flush 纸带 buffer（程序结束前调用）。"""
+    global _TAPE_FLUSH_COUNT
+    if _TAPE_CONN and _TAPE_FLUSH_COUNT > 0:
+        _TAPE_CONN.commit()
+        _TAPE_FLUSH_COUNT = 0
+        _logger.info("[飞轮] 纸带 sqlite 已 flush")
                 reconstructed.pop("msv_l0"),
                 reconstructed.pop("msv_trend", 50.0),
                 reconstructed.pop("msv_volume", 50.0),
