@@ -1,6 +1,0 @@
-[2026-05-09 15:45:01] === Daily run start ===
-[2026-05-09 15:45:01] [1/2] Updating data...
-[2026-05-09 15:48:05] [1/2] Data update OK
-[2026-05-09 15:48:05] [2/2] Generating report...
-[2026-05-09 15:50:12] [2/2] Report generation OK
-[2026-05-09 15:50:12] === Daily run SUCCESS ===

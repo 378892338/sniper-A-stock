@@ -10,4 +10,33 @@ output/
 .claude/
 data/local/meta.db*
 data/local/*.db
-outputs/reports/
+
+# ── 内部 AI 工作约定，不公开 ──
+AGENTS.md
+CLAUDE.md
+CLAUDE.md.*
+.ai/
+
+# ── 凭证 / 启动脚本（含明文 token，禁用） ──
+*.bat
+scripts/run_daily.bat
+
+# ── 历史备份目录（含 1.7GB SQLite 备份） ──
+data/sources/backup/
+
+# ── outputs/reports: 只跟踪日报 PDF，其余运行产物全部排除 ──
+outputs/reports/*.log
+outputs/reports/*.log.*
+outputs/reports/*.bak
+outputs/reports/run_*.txt
+outputs/reports/run_log.txt
+outputs/reports/last_run.json
+outputs/reports/skip_list.json
+!outputs/reports/quant_daily_*.pdf
+
+# 开源安全 — 回测结果含成交额数据，禁止入仓
+backtest_full_*.json
+backtest_result*.json
+data/backtest_result*.json
+outputs/backtest_result*.json
+outputs/optimize_target/
