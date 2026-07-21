@@ -15,6 +15,12 @@ if _env_file.exists():
                 if _k and _v:
                     os.environ.setdefault(_k, _v)
 
+# 路径中心 — 所有运行时数据走 QUANT_DATA_ROOT（数据仓）
+from config.paths import (  # noqa: E402
+    QUANT_DATA_ROOT, DATA_RAW_DIR, OUTPUT_DIR, META_DB_PATH,
+    DATA_LOCAL_DIR, DATA_CACHE_DIR, LOG_DIR,
+)
+
 # ============ 数据源配置 ============
 # "akshare" | "akshare_daily" | "tushare" | "auto" — auto 按 DATA_SOURCE_PREFERENCE 顺序选第一个可用的
 DATA_SOURCE = "auto"
@@ -25,17 +31,18 @@ TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
 JQDATA_USERNAME = os.getenv("JQDATA_USERNAME", "")
 JQDATA_PASSWORD = os.getenv("JQDATA_PASSWORD", "")
 
-# 路径
+# 路径（兼容旧名：ROOT/SW2_BACKUP_PATH/QLIB_DIR/MODEL_DIR/RESULT_DIR 仍可用）
 ROOT = Path(__file__).parent.parent
-DATA_DIR = ROOT / "data" / "raw"
+DATA_DIR = DATA_RAW_DIR
 SW2_BACKUP_PATH = DATA_DIR / "sw2_members_backup.parquet"
-QLIB_DIR = ROOT / "data" / "qlib_data"
-OUTPUT_DIR = ROOT / "outputs"
+QLIB_DIR = QUANT_DATA_ROOT / "qlib_data"
+OUTPUT_DIR = OUTPUT_DIR                              # 来自 config.paths（数据仓 outputs）
 MODEL_DIR = OUTPUT_DIR / "models"
 RESULT_DIR = OUTPUT_DIR / "results"
 
 def _ensure_dirs():
-    for d in [DATA_DIR, QLIB_DIR, OUTPUT_DIR, MODEL_DIR, RESULT_DIR]:
+    # 优先保证数据仓 + 代码仓必要子目录都存在
+    for d in [DATA_DIR, QLIB_DIR, OUTPUT_DIR, MODEL_DIR, RESULT_DIR, DATA_LOCAL_DIR, LOG_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 _ensure_dirs()

@@ -2,14 +2,25 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-data/raw/_cache/
-output/
 .idea/
 .vscode/
-*.parquet
 .claude/
-data/local/meta.db*
-data/local/*.db
+
+# ── 数据文件（数据仓分离后，代码仓不留任何运行时数据） ──
+*.db  *.sqlite  *.sqlite3
+*.parquet  *.pkl  *.pkl.gz
+*.bak  *.log  *.log.*
+*.swp  *.tmp
+data/raw/_cache/
+data/local/*.db  data/local/*.db-*  data/local/*.corrupted
+test_recovery.db
+_missing_syms.json
+.l2_cache/
+logs/
+backtest_full_*.json
+backtest_result*.json
+l4_report_clean.txt
+factor_eval_4318/
 
 # ── 内部 AI 工作约定，不公开 ──
 AGENTS.md
@@ -35,8 +46,6 @@ outputs/reports/skip_list.json
 !outputs/reports/quant_daily_*.pdf
 
 # 开源安全 — 回测结果含成交额数据，禁止入仓
-backtest_full_*.json
-backtest_result*.json
 data/backtest_result*.json
 outputs/backtest_result*.json
 outputs/optimize_target/

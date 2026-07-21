@@ -8,10 +8,8 @@ from core.logger import get_logger
 
 logger = get_logger("data.local.schema")
 
-# 数据库文件路径
-# 优先使用环境变量 META_DB_PATH，否则使用默认路径 D:\quant_data\meta.db
-import os as _os
-DB_FILE = _os.environ.get("META_DB_PATH", r"D:\quant_data\meta.db")
+# 数据库文件路径 — 统一走 config.paths（数据仓）
+from config.paths import META_DB_PATH as DB_FILE  # noqa: E402
 
 # ── DDL ──
 
