@@ -2,11 +2,21 @@
 
 可配置为定时任务（Windows 计划任务 / crontab）每周运行一次。
 每张表独立追踪更新时间，避免遗漏。
+
+注意：数据更新时需要绕过系统代理（HTTPS_PROXY 环境变量），
+因为代理 127.0.0.1:15721 拦截所有 HTTPS 隧道请求。
 """
 
+import os
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
+
+# 绕过代理 — 数据更新不走 HTTPS_PROXY（代理 127.0.0.1:15721 拦截全 HTTPS）
+os.environ.pop("HTTPS_PROXY", None)
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("https_proxy", None)
+os.environ.pop("http_proxy", None)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))

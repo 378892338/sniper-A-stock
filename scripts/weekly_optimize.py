@@ -27,43 +27,49 @@ from pathlib import Path
 # -- ParamLock: 日归因 vs 周优化仲裁 --
 class ParamLock:
     """参数锁定 - 周优化后锁定 3 天，日归因在锁期间只读不写。"""
-    LOCK_FILE = Path("outputs/.param_lock.json")
+    @staticmethod
+    def _dir():
+        from config.paths import OUTPUT_DIR
+        return OUTPUT_DIR / "optimize_target"
+
+    @classmethod
+    def _lock(cls):
+        p = cls._dir() / ".param_lock.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
 
     @classmethod
     def is_locked(cls) -> bool:
-        if not cls.LOCK_FILE.exists():
+        p = cls._lock()
+        if not p.exists():
             return False
         try:
-            data = json.loads(cls.LOCK_FILE.read_text(encoding="utf-8"))
-            lock_until = datetime.fromisoformat(data["lock_until"])
-            return datetime.now() < lock_until
-        except (json.JSONDecodeError, KeyError, OSError, ValueError):
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return datetime.now() < datetime.fromisoformat(data["lock_until"])
+        except Exception:
             return False
 
     @classmethod
     def lock(cls, days: int = 3) -> None:
+        p = cls._lock()
         until = datetime.now() + timedelta(days=days)
-        cls.LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-        cls.LOCK_FILE.write_text(
-            json.dumps({"lock_until": until.isoformat()}, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        p.write_text(json.dumps({"lock_until": until.isoformat()}, ensure_ascii=False), encoding="utf-8")
         print(f"[lock] 参数已锁定至 {until.strftime('%Y-%m-%d %H:%M')}")
 
     @classmethod
     def unlock(cls) -> None:
-        cls.LOCK_FILE.unlink(missing_ok=True)
+        p = cls._lock()
+        p.unlink(missing_ok=True)
         print("[unlock] 参数锁定已解除")
 
     @classmethod
     def remaining_hours(cls) -> float:
-        if not cls.LOCK_FILE.exists():
+        p = cls._lock()
+        if not p.exists():
             return 0.0
         try:
-            data = json.loads(cls.LOCK_FILE.read_text(encoding="utf-8"))
-            until = datetime.fromisoformat(data["lock_until"])
-            diff = until - datetime.now()
-            return max(0.0, diff.total_seconds() / 3600)
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return max(0.0, (datetime.fromisoformat(data["lock_until"]) - datetime.now()).total_seconds() / 3600)
         except Exception:
             return 0.0
 
@@ -91,12 +97,24 @@ def _is_trading_monday() -> bool:
 
 
 # -- 纸带新鲜度检查 --
-_TAPE_COUNT_FILE = Path("outputs/reports/.last_tape_count.txt")
-_PAPER_TAPE_PATH = Path("outputs/paper_tape.parquet")
+_TAPE_COUNT_FILE = None
+_PAPER_TAPE_PATH = None
+
+
+def _paper_tape_path() -> Path:
+    from config.paths import OUTPUT_DIR
+    return OUTPUT_DIR / "optimize_target" / "paper_tape.parquet"
+
+
+def _tape_count_file() -> Path:
+    return _paper_tape_path().parent / ".last_tape_count.txt"
 
 
 def _check_tape_freshness() -> bool:
     """检查纸带是否有新增交易。"""
+    global _PAPER_TAPE_PATH, _TAPE_COUNT_FILE
+    _PAPER_TAPE_PATH = _paper_tape_path()
+    _TAPE_COUNT_FILE = _tape_count_file()
     if not _PAPER_TAPE_PATH.exists():
         print("[skip] paper_tape.parquet 不存在，跳过周优化")
         return False
@@ -170,7 +188,8 @@ def run_weekly_optimization() -> bool:
 
     # 5. 生成优化报告
     print("\n[5/5] 生成优化报告...")
-    report_path = Path(f"outputs/reports/optimize_report_w{week_num}.md")
+    from config.paths import OUTPUT_DIR
+    report_path = OUTPUT_DIR / "reports" / f"optimize_report_w{week_num}.md"
     try:
         try:
             import importlib

@@ -554,7 +554,8 @@ def _attribution(trades: list[dict],
 def _is_param_locked() -> bool:
     """检查参数是否被周优化锁定（锁定期间归因只读不写）。"""
     try:
-        lock_file = Path(__file__).resolve().parents[1] / "outputs/.param_lock.json"
+        from config.paths import OUTPUT_DIR
+        lock_file = OUTPUT_DIR / "optimize_target" / ".param_lock.json"
         if not lock_file.exists():
             return False
         data = json.loads(lock_file.read_text(encoding="utf-8"))
