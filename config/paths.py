@@ -28,6 +28,7 @@ DATA_CACHE_DIR = QUANT_DATA_ROOT / "cache"          # 通用缓存
 OUTPUT_DIR = QUANT_DATA_ROOT / "outputs"            # 结果/日志/调优
 LOG_DIR = QUANT_DATA_ROOT / "logs"                  # 顶层日志
 EXTERNAL_DATA_DIR = QUANT_DATA_ROOT / "external"    # 第三方数据（JQuant 等）
+TAPE_DIR = QUANT_DATA_ROOT / "tape"                 # 纸带专区（飞轮核心，不可再生）
 
 # 历史兼容：JQData 默认位置
 META_DB_PATH = os.environ.get("META_DB_PATH", str(QUANT_DATA_ROOT / "local" / "meta.db"))
@@ -37,7 +38,7 @@ DOCS_DIR = _CODE_ROOT / "docs"
 SCRIPTS_DIR = _CODE_ROOT / "scripts"
 
 # 确保数据仓目录存在
-for _d in (DATA_LOCAL_DIR, DATA_RAW_DIR, DATA_CACHE_DIR, OUTPUT_DIR, LOG_DIR, EXTERNAL_DATA_DIR):
+for _d in (DATA_LOCAL_DIR, DATA_RAW_DIR, DATA_CACHE_DIR, OUTPUT_DIR, LOG_DIR, EXTERNAL_DATA_DIR, TAPE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
@@ -53,7 +54,7 @@ def quant_path(*parts: str) -> Path:
 __all__ = [
     "QUANT_DATA_ROOT",
     "DATA_LOCAL_DIR", "DATA_RAW_DIR", "DATA_CACHE_DIR",
-    "OUTPUT_DIR", "LOG_DIR", "EXTERNAL_DATA_DIR",
+    "OUTPUT_DIR", "LOG_DIR", "EXTERNAL_DATA_DIR", "TAPE_DIR",
     "META_DB_PATH",
     "DOCS_DIR", "SCRIPTS_DIR",
     "quant_path",

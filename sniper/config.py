@@ -280,6 +280,48 @@ _logger = get_logger("sniper.config")
 _TRADE_PAPER: list[dict] | None = None  # 纸带（内存缓存）
 _DISTANCE_WEIGHTS = [0.50, 0.20, 0.15, 0.15]  # L0, 趋势, 量能, 宽度
 
+# ── 全参数快照 — 107 个 Config 字段全部进入纸带 ──
+_ALL_CONFIG_CLASSES: list[tuple[str, type]] = [
+    ("MarketConfig", MarketConfig),
+    ("SectorConfig", SectorConfig),
+    ("StockConfig", StockConfig),
+    ("EntryConfig", EntryConfig),
+    ("ExitConfig", ExitConfig),
+    ("RiskConfig", RiskConfig),
+    ("BacktestConfig", BacktestConfig),
+    ("EtfMomentumConfig", EtfMomentumConfig),
+    ("FusionConfig", FusionConfig),
+    ("DdrConfig", DdrConfig),
+    ("DegradationConfig", DegradationConfig),
+]
+
+
+def snapshot_all_params() -> dict[str, float]:
+    """快照当前全部 Config 参数的扁平化 dict。
+
+    Returns:
+        {"MarketConfig_trend_window": 20, "ExitConfig_stop_loss": -0.02, ...}
+        共 107 个键。
+    """
+    snap: dict[str, float] = {}
+    config_map = {
+        "MarketConfig": MARKET,
+        "ExitConfig": EXIT,
+        "RiskConfig": RISK,
+        "EntryConfig": ENTRY,
+        "BacktestConfig": BACKTEST,
+        "SectorConfig": SECTOR,
+        "StockConfig": STOCK,
+        "EtfMomentumConfig": ETF_MOMENTUM,
+        "FusionConfig": FUSION,
+        "DdrConfig": DDR,
+        "DegradationConfig": DEGRADATION,
+    }
+    for config_name, config_obj in config_map.items():
+        for field, val in config_obj.__dict__.items():
+            snap[f"{config_name}_{field}"] = val
+    return snap
+
 # ── 打字机归因参数元数据 ──
 # 每个参数的定义域：lo/hi（边界）、step（步长）、int（是否整数）
 _PARAMS_META = {
@@ -301,24 +343,27 @@ _PARAM_TO_CONFIG = {
 def load_paper_tape(path: str = "") -> None:
     """启动时加载纸带（一次调用）。
 
-    从展平 parquet 读取后，将 param_* 列重建为 params dict，
+    从展平 parquet 读取后，将 ConfigName_field 列重建为 all_params dict，
     将 msv_l0/msv_trend/msv_volume/msv_breadth 重建为 market_state_vector list。
     """
     global _TRADE_PAPER
     if not path:
         try:
-            from config.paths import OUTPUT_DIR
-            path = _os.path.join(str(OUTPUT_DIR), "optimize_target", "paper_tape.parquet")
+            from config.paths import TAPE_DIR
+            path = _os.path.join(str(TAPE_DIR), "paper_tape.parquet")
         except ImportError:
-            path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
+            try:
+                from config.paths import OUTPUT_DIR
+                path = _os.path.join(str(OUTPUT_DIR), "optimize_target", "paper_tape.parquet")
+            except ImportError:
+                path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
     if not _os.path.exists(path):
         return
     df = _pd.read_parquet(path)
     records = df.to_dict("records")
 
-    # 从展平列重建嵌套结构
     for r in records:
-        # 重建 params dict：param_stop_loss → params["stop_loss"]
+        # 重建 params dict：param_stop_loss → params["stop_loss"]（向后兼容）
         param_keys = [k for k in r if k.startswith("param_")]
         if param_keys:
             r["params"] = {k.replace("param_", ""): r.pop(k) for k in param_keys}
@@ -329,6 +374,18 @@ def load_paper_tape(path: str = "") -> None:
                 r.pop("msv_l0"), r.pop("msv_trend", 50.0),
                 r.pop("msv_volume", 50.0), r.pop("msv_breadth", 50.0),
             ]
+        # 重建 all_params：所有 ConfigName_field 列 → all_params dict
+        all_p = {}
+        for k in list(r.keys()):
+            if k.startswith("MarketConfig_") or k.startswith("ExitConfig_") or \
+               k.startswith("RiskConfig_") or k.startswith("EntryConfig_") or \
+               k.startswith("BacktestConfig_") or k.startswith("SectorConfig_") or \
+               k.startswith("StockConfig_") or k.startswith("EtfMomentumConfig_") or \
+               k.startswith("FusionConfig_") or k.startswith("DdrConfig_") or \
+               k.startswith("DegradationConfig_"):
+                all_p[k] = r.pop(k)
+        if all_p:
+            r["all_params"] = all_p
 
     _TRADE_PAPER = records
     # 飞轮闭环：加载持久化参数（恢复上次归因结果）
@@ -339,6 +396,7 @@ def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
     """将一笔完成的交易追加到纸带。
 
     展平 params → param_xxx 列 + 展平 market_state_vector
+    + 展平全量 Config 参数（ConfigName_field）
     → 读现存的 parquet → 追加 → 写回 → 更新内存缓存。
 
     Args:
@@ -350,8 +408,8 @@ def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
         path = path_override
     else:
         try:
-            from config.paths import OUTPUT_DIR
-            path = _os.path.join(str(OUTPUT_DIR), "optimize_target", "paper_tape.parquet")
+            from config.paths import TAPE_DIR
+            path = _os.path.join(str(TAPE_DIR), "paper_tape.parquet")
         except ImportError:
             path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
 
@@ -368,6 +426,9 @@ def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
     row["msv_trend"] = vec[1] if len(vec) > 1 else 50.0
     row["msv_volume"] = vec[2] if len(vec) > 2 else 50.0
     row["msv_breadth"] = vec[3] if len(vec) > 3 else 50.0
+
+    # 全量 Config 参数快照
+    row.update(snapshot_all_params())
 
     new_df = _pd.DataFrame([row])
 

@@ -54,7 +54,7 @@ def make_trade(**overrides) -> dict:
 
 
 def save_flattened_parquet(records: list[dict], path: str) -> None:
-    """模拟 optimize_target.py 的展平写入逻辑。"""
+    """模拟 optimize_target.py 的展平写入逻辑（含 Config 全参快照）。"""
     df = pd.DataFrame(records)
     params_expanded = df["params"].apply(pd.Series)
     params_expanded.columns = [f"param_{c}" for c in params_expanded.columns]
