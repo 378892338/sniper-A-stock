@@ -152,14 +152,8 @@ def run_weekly_optimization() -> bool:
     today = datetime.now().strftime("%Y-%m-%d")
     week_num = datetime.now().isocalendar()[1]
 
-    # 1. 纸带重采样
-    print(f"\n[1/5] 打字机纸带重采样 ({today})...")
-    try:
-        import importlib
-        opt_target = importlib.import_module("scripts.optimize_target")
-        opt_target.main()
-    except Exception as e:
-        print(f"[warn] 纸带采样异常（使用现有纸带）: {e}")
+    # 1. 🚫 纸带重采样已移除（飞轮闭环：实盘纸带只增不减，不再被随机回测覆盖）
+    print(f"\n[1/5] 跳过纸带重采样（飞轮闭环，纸带只增不减）")
 
     # 2. 打字机全量归因
     print("\n[2/5] 打字机全量归因...")
@@ -179,12 +173,13 @@ def run_weekly_optimization() -> bool:
     except Exception as e:
         print(f"[warn] 分箱优选异常（继续）: {e}")
 
-    # 4. 写入参数管理器 + 锁定
-    print("\n[4/5] 写入参数管理器...")
+    # 4. 持久化归因结果（替代旧的锁定 + 参数管理器）
+    print("\n[4/5] 持久化归因结果...")
     try:
-        ParamLock.lock(days=3)
+        from sniper.config import save_effective_params
+        save_effective_params()
     except Exception as e:
-        print(f"[warn] 参数写入异常: {e}")
+        print(f"[warn] 归因持久化异常: {e}")
 
     # 5. 生成优化报告
     print("\n[5/5] 生成优化报告...")
@@ -205,15 +200,15 @@ def run_weekly_optimization() -> bool:
 
 | 步骤 | 状态 |
 |------|------|
-| 纸带采样 | {ok_flag} |
+| 纸带采样 | ✅ 跳过（飞轮闭环，实盘纸带只增不减） |
 | 全量归因 | V（见 paper_tape） |
 | 分箱优选 | V（见 ParamManager） |
-| 参数锁定 | V 锁定至 {(datetime.now()+timedelta(days=3)).strftime('%Y-%m-%d')} |
+| 参数持久化 | V（见 effective_params.json） |
 
-## ParamLock 状态
+## 飞轮闭环状态
 
-- 已锁定: {ParamLock.is_locked()}
-- 剩余锁定时间: {ParamLock.remaining_hours():.1f}h
+- 已持久化: True
+- 纸带路径: {_PAPER_TAPE_PATH}
 """
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report, encoding="utf-8")

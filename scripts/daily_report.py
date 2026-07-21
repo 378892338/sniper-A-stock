@@ -312,6 +312,15 @@ def section_attribution(date: str, l0_info: dict) -> str:
         v = params.get(k, "—")
         lines.append(f"| {k} | {_fmt(v) if isinstance(v, (int, float)) else v} |")
     lines.append("")
+
+    # 飞轮闭环：归因有信号则持久化参数（不阻断日报生成）
+    if params:
+        try:
+            cfg.save_effective_params()
+            logger.debug("飞轮参数已通过日报触发持久化")
+        except Exception as e:
+            logger.debug(f"飞轮参数持久化跳过: {e}")
+
     return "\n".join(lines)
 
 

@@ -40,7 +40,7 @@ def daily_run(today: str | None = None) -> None:
     logger.info(f"实盘运行: {today}")
     logger.info(f"{'='*50}")
 
-    # ① 加载纸带
+    # ① 加载纸带 + 恢复持久化参数（飞轮闭环）
     load_paper_tape()
 
     # ② 计算今天市场指纹

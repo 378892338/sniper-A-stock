@@ -269,6 +269,7 @@ DEGRADATION = DegradationConfig()
 # 通过 L0 子维度最近邻匹配，在纸带上找最相似的历史交易
 # 归因 → 切换参数 → 交易 → 纸带追加
 
+import json as _json
 import os as _os
 import numpy as _np
 import pandas as _pd
@@ -305,7 +306,11 @@ def load_paper_tape(path: str = "") -> None:
     """
     global _TRADE_PAPER
     if not path:
-        path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
+        try:
+            from config.paths import OUTPUT_DIR
+            path = _os.path.join(str(OUTPUT_DIR), "optimize_target", "paper_tape.parquet")
+        except ImportError:
+            path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
     if not _os.path.exists(path):
         return
     df = _pd.read_parquet(path)
@@ -326,6 +331,8 @@ def load_paper_tape(path: str = "") -> None:
             ]
 
     _TRADE_PAPER = records
+    # 飞轮闭环：加载持久化参数（恢复上次归因结果）
+    load_effective_params()
 
 
 def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
@@ -339,7 +346,14 @@ def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
         path_override: 测试时指定临时路径
     """
     global _TRADE_PAPER
-    path = path_override or _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
+    if path_override:
+        path = path_override
+    else:
+        try:
+            from config.paths import OUTPUT_DIR
+            path = _os.path.join(str(OUTPUT_DIR), "optimize_target", "paper_tape.parquet")
+        except ImportError:
+            path = _os.path.join("outputs", "optimize_target", "paper_tape.parquet")
 
     # ── 展平 ──
     row: dict = {}
@@ -388,6 +402,71 @@ def append_to_paper_tape(trade: dict, path_override: str = "") -> None:
                 reconstructed.pop("msv_breadth", 50.0),
             ]
         _TRADE_PAPER.append(reconstructed)
+
+
+def _effective_params_path():
+    """飞轮参数持久化路径（数据仓 optimize_target）。"""
+    try:
+        from config.paths import OUTPUT_DIR
+        return OUTPUT_DIR / "optimize_target" / ".effective_params.json"
+    except ImportError:
+        from pathlib import Path as _Path
+        return _Path("outputs/optimize_target/.effective_params.json")
+
+
+def save_effective_params() -> None:
+    """持久化当前全局参数到磁盘（飞轮闭环：归因结果不因进程退出丢失）。"""
+    p = _effective_params_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    import datetime as _dt_mod
+    snapshot = {
+        "EXIT.stop_loss": EXIT.stop_loss,
+        "EXIT.trailing_stop": EXIT.trailing_stop,
+        "EXIT.max_hold_days": EXIT.max_hold_days,
+        "RISK.position_size": RISK.position_size,
+        "RISK.max_positions": RISK.max_positions,
+        "ENTRY.soft_min_score": ENTRY.soft_min_score,
+        "MARKET.bullish_threshold": MARKET.bullish_threshold,
+        "MARKET.bearish_threshold": MARKET.bearish_threshold,
+        "last_updated": _dt_mod.datetime.now().isoformat(),
+    }
+    p.write_text(
+        _json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    _logger.info(f"飞轮参数已持久化: {p}")
+
+
+def load_effective_params(path: str = "") -> None:
+    """从磁盘恢复持久化参数到全局配置（飞轮闭环：进程重启后继承上次归因结果）。"""
+    global EXIT, RISK, ENTRY, MARKET
+    p = _Path(path) if path else _effective_params_path()
+    if not p.exists():
+        return
+    try:
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        params: dict[str, dict] = {"EXIT": {}, "RISK": {}, "ENTRY": {}, "MARKET": {}}
+        for key, val in data.items():
+            if key == "last_updated":
+                continue
+            section, param = key.split(".", 1)
+            if section in params:
+                params[section][param] = val
+        cls_map = {
+            "EXIT": ExitConfig, "RISK": RiskConfig,
+            "ENTRY": EntryConfig, "MARKET": MarketConfig,
+        }
+        refs = {"EXIT": EXIT, "RISK": RISK, "ENTRY": ENTRY, "MARKET": MARKET}
+        for name, cls in cls_map.items():
+            pv = params.get(name, {})
+            if not pv:
+                continue
+            merged = {**refs[name].__dict__, **pv}
+            globals()[name] = cls(**merged)
+        _logger.info(
+            f"飞轮参数已从 {p} 恢复（{data.get('last_updated', '?')}）"
+        )
+    except Exception as e:
+        _logger.warning(f"飞轮参数加载失败（使用默认值）: {e}")
 
 
 def _market_distance(fp1: list[float], fp2: list[float]) -> float:
@@ -552,21 +631,8 @@ def _attribution(trades: list[dict],
 
 
 def _is_param_locked() -> bool:
-    """检查参数是否被周优化锁定（锁定期间归因只读不写）。"""
-    try:
-        from config.paths import OUTPUT_DIR
-        lock_file = OUTPUT_DIR / "optimize_target" / ".param_lock.json"
-        if not lock_file.exists():
-            return False
-        data = json.loads(lock_file.read_text(encoding="utf-8"))
-        from datetime import datetime as _dt
-        lock_until = _dt.fromisoformat(data["lock_until"])
-        locked = _dt.now() < lock_until
-        if locked:
-            _logger.info(f"参数锁定中（至 {lock_until.strftime('%m-%d %H:%M')}），归因只读")
-        return locked
-    except Exception:
-        return False
+    """检查参数是否被周优化锁定 — 已废弃（飞轮闭环后不再锁定）。"""
+    return False
 
 
 def configure_for_today(l0_score: float,
@@ -606,17 +672,15 @@ def configure_for_today(l0_score: float,
         _logger.info("打字机归因: 所有参数均无信号...保持现有参数")
         return
 
-    # ⚠️ ParamLock 锁定期间只读不写（周优化结果优先）
-    if _is_param_locked():
-        _logger.info("打字机归因: 参数锁定中，跳过写入（归因结果仅用于监控）")
-        return
-
-    # 只更新 state_map 中有的参数
+    # ⚠️ ParamLock 已废弃 — 飞轮闭环后归因始终持久化
+    # 直接写入全局参数（同时持久化到磁盘，防止进程退出丢失）
     n_updated = 0
     n_updated += _update_if_exists(EXIT.__dict__,   today_params, EXIT,   "EXIT")
     n_updated += _update_if_exists(RISK.__dict__,   today_params, RISK,   "RISK")
     n_updated += _update_if_exists(ENTRY.__dict__,  today_params, ENTRY,  "ENTRY")
     n_updated += _update_if_exists(MARKET.__dict__, today_params, MARKET, "MARKET")
+    if n_updated:
+        save_effective_params()
     _logger.info(f"打字机归因: {n_updated} 个参数已更新")
 
 

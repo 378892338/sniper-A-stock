@@ -93,7 +93,7 @@ class BacktestEngine:
             if date not in self._l1_cache:
                 self._l1_cache[date] = self.sector.top_sectors(date)
             if date not in self._l1_df_cache:
-                sw2_names = self.sector.top_sw2_sectors(date, single_layer=True)
+                sw2_names = self.sector.top_sw2_sectors(date, single_layer=False)
                 if sw2_names:
                     self._l1_df_cache[date] = pd.DataFrame({"industry_name": sw2_names})
                 else:
